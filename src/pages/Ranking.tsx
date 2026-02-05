@@ -19,123 +19,41 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Download, Loader2, Medal } from 'lucide-react';
+import { Trophy, Download, Loader2, Medal, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface RankingEntry {
-  operatorId: string;
+  operator_id: string;
   matricule: string;
-  fullName: string;
+  full_name: string;
   unit: string;
-  rawPoints: number;
+  raw_points: number;
   score100: number;
   note20: number;
-  positionsCount: number;
-  approvedEvents: number;
+  positions_count: number;
+  approved_events: number;
+  work_days: number;
 }
 
 export default function Ranking() {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear.toString());
 
-  // Récupérer le classement
-  const { data: ranking, isLoading } = useQuery({
+  // Récupérer le classement via RPC
+  const { data: ranking, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['ranking', selectedYear],
     queryFn: async () => {
-      // Récupérer tous les opérateurs actifs
-      const { data: operators, error: opError } = await supabase
-        .from('operators')
-        .select('id, matricule, full_name, unit')
-        .eq('is_active', true);
+      const { data, error } = await supabase
+        .rpc('get_year_ranking', { p_year: parseInt(selectedYear) });
 
-      if (opError) throw opError;
-
-      // Récupérer tous les événements approuvés de l'année
-      const startDate = `${selectedYear}-01-01`;
-      const endDate = `${selectedYear}-12-31`;
-
-      const { data: events, error: evError } = await supabase
-        .from('events')
-        .select(`
-          operator_id,
-          event_date,
-          event_type:event_types(points)
-        `)
-        .eq('status', 'approved')
-        .gte('event_date', startDate)
-        .lte('event_date', endDate);
-
-      if (evError) throw evError;
-
-      // Récupérer les postes maîtrisés par opérateur
-      const { data: positions, error: posError } = await supabase
-        .from('operator_positions')
-        .select('operator_id');
-
-      if (posError) throw posError;
-
-      // Calculer les points par opérateur
-      const operatorPoints: Record<
-        string,
-        {
-          rawPoints: number;
-          approvedEvents: number;
-          workDays: Set<string>;
-        }
-      > = {};
-
-      events?.forEach((event: any) => {
-        const opId = event.operator_id;
-        if (!operatorPoints[opId]) {
-          operatorPoints[opId] = {
-            rawPoints: 0,
-            approvedEvents: 0,
-            workDays: new Set(),
-          };
-        }
-        operatorPoints[opId].rawPoints += Number(event.event_type?.points || 0);
-        operatorPoints[opId].approvedEvents += 1;
-        operatorPoints[opId].workDays.add(event.event_date);
-      });
-
-      // Compter les postes par opérateur
-      const positionsCount: Record<string, number> = {};
-      positions?.forEach((p) => {
-        positionsCount[p.operator_id] = (positionsCount[p.operator_id] || 0) + 1;
-      });
-
-      // Calculer le classement
-      const rankingData: RankingEntry[] = operators
-        ?.map((op) => {
-          const data = operatorPoints[op.id] || {
-            rawPoints: 0,
-            approvedEvents: 0,
-            workDays: new Set(),
-          };
-
-          // Bonus polyvalence: +0.5 par poste au-delà de 2
-          const posCount = positionsCount[op.id] || 0;
-          const polyvalenceBonus = Math.max(0, posCount - 2) * 0.5;
-
-          const rawPoints = data.rawPoints + polyvalenceBonus;
-          const score100 = Math.max(0, Math.min(100, 80 + rawPoints));
-          const note20 = Math.round((score100 / 5) * 10) / 10;
-
-          return {
-            operatorId: op.id,
-            matricule: op.matricule,
-            fullName: op.full_name,
-            unit: op.unit,
-            rawPoints,
-            score100,
-            note20,
-            positionsCount: posCount,
-            approvedEvents: data.approvedEvents,
-          };
-        })
-        .sort((a, b) => b.score100 - a.score100);
-
-      return rankingData;
+      if (error) {
+        console.error('[Ranking] supabase error:', error);
+        throw error;
+      }
+      
+      return (data as RankingEntry[]) || [];
     },
+    retry: 1,
   });
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
@@ -147,12 +65,12 @@ export default function Ranking() {
     const rows = ranking.map((entry, index) => [
       index + 1,
       entry.matricule,
-      entry.fullName,
+      entry.full_name,
       entry.unit,
-      entry.rawPoints.toFixed(1),
-      entry.score100.toFixed(1),
-      entry.note20.toFixed(1),
-      entry.positionsCount,
+      Number(entry.raw_points).toFixed(1),
+      Number(entry.score100).toFixed(1),
+      Number(entry.note20).toFixed(1),
+      entry.positions_count,
     ]);
 
     const csvContent = [
@@ -226,6 +144,18 @@ export default function Ranking() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
+          ) : isError ? (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Erreur de chargement</AlertTitle>
+              <AlertDescription className="flex items-center justify-between">
+                <span>{error?.message || 'Impossible de charger le classement'}</span>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Réessayer
+                </Button>
+              </AlertDescription>
+            </Alert>
           ) : ranking && ranking.length > 0 ? (
             <div className="rounded-md border">
               <Table>
@@ -243,7 +173,7 @@ export default function Ranking() {
                 </TableHeader>
                 <TableBody>
                   {ranking.map((entry, index) => (
-                    <TableRow key={entry.operatorId}>
+                    <TableRow key={entry.operator_id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {index < 3 ? (
@@ -256,39 +186,39 @@ export default function Ranking() {
                         </div>
                       </TableCell>
                       <TableCell className="font-mono">{entry.matricule}</TableCell>
-                      <TableCell className="font-medium">{entry.fullName}</TableCell>
+                      <TableCell className="font-medium">{entry.full_name}</TableCell>
                       <TableCell>{entry.unit}</TableCell>
                       <TableCell className="text-right">
                         <span
                           className={
-                            entry.rawPoints >= 0
+                            Number(entry.raw_points) >= 0
                               ? 'text-success'
                               : 'text-destructive'
                           }
                         >
-                          {entry.rawPoints >= 0 ? '+' : ''}
-                          {entry.rawPoints.toFixed(1)}
+                          {Number(entry.raw_points) >= 0 ? '+' : ''}
+                          {Number(entry.raw_points).toFixed(1)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-semibold">
-                        {entry.score100.toFixed(1)}
+                        {Number(entry.score100).toFixed(1)}
                       </TableCell>
                       <TableCell className="text-right">
                         <Badge
-                          variant={entry.note20 >= 16 ? 'default' : 'outline'}
+                          variant={Number(entry.note20) >= 16 ? 'default' : 'outline'}
                           className={
-                            entry.note20 >= 16
+                            Number(entry.note20) >= 16
                               ? 'bg-success text-success-foreground'
-                              : entry.note20 >= 12
+                              : Number(entry.note20) >= 12
                               ? 'bg-primary text-primary-foreground'
                               : ''
                           }
                         >
-                          {entry.note20.toFixed(1)}/20
+                          {Number(entry.note20).toFixed(1)}/20
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
-                        {entry.positionsCount}
+                        {entry.positions_count}
                       </TableCell>
                     </TableRow>
                   ))}

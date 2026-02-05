@@ -31,7 +31,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { ListChecks, Pencil, Loader2, Plus } from 'lucide-react';
+import { ListChecks, Pencil, Loader2, Plus, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { Database } from '@/integrations/supabase/types';
 
 type EventCategory = Database['public']['Enums']['event_category'];
@@ -72,7 +73,7 @@ export default function Scoring() {
   });
 
   // Récupérer les types d'événements
-  const { data: eventTypes, isLoading } = useQuery({
+  const { data: eventTypes, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['event-types'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -81,9 +82,13 @@ export default function Scoring() {
         .order('category')
         .order('label');
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Scoring] supabase error:', error);
+        throw error;
+      }
       return data as EventType[];
     },
+    retry: 1,
   });
 
   // Mutation pour créer/modifier
@@ -191,6 +196,18 @@ export default function Scoring() {
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
+      ) : isError ? (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Erreur de chargement</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>{error?.message || 'Impossible de charger la grille de scoring'}</span>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Réessayer
+            </Button>
+          </AlertDescription>
+        </Alert>
       ) : (
         <div className="grid gap-6">
           {groupedTypes &&
