@@ -16,6 +16,7 @@ import Validation from "@/pages/Validation";
 import Import from "@/pages/Import";
 import Scoring from "@/pages/Scoring";
 import Ranking from "@/pages/Ranking";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -98,6 +99,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <Ranking />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <Settings />
                   </AppLayout>
                 </ProtectedRoute>
               }
