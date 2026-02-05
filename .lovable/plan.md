@@ -1,409 +1,418 @@
 
-# Plan d'amelioration PharmaTrack Performance
+# Plan: Durcissement Scoring + Classement Hierarchique
 
-## Resume du contexte
+## Resume de l'analyse
 
-L'application PharmaTrack Performance est fonctionnelle avec:
-- Authentification (supervisor/manager)
-- Gestion des operateurs
-- Saisie d'evenements manuels
-- Import CSV
-- Grille de scoring
-- Classement annuel via RPC `get_year_ranking`
-- Page Settings (profil + postes)
+### Etat actuel verifie
 
-Ce plan couvre les evolutions demandees avec des changements minimaux et cibles.
-
----
-
-## Phase 1: Scoring - Verification et Patch
-
-### 1.1 Verification des formules actuelles
-
-La RPC `get_year_ranking` actuelle calcule deja:
-- `raw_points = SUM(event_points) + (positions_count - 2) * 0.5`
+**Formules dans la RPC `get_year_ranking` (CONFORMES):**
+- `raw_points = event_points + bonus_polyvalence`
+- `bonus_polyvalence = max(0, positions_count - 2) * 0.5`
 - `score100 = clamp(80 + raw_points, 0, 100)`
 - `note20 = round(score100 / 5, 1)`
 
-**Statut**: Formules conformes aux specifications.
+**Regles anti-gaming implementees:**
+- Cap bonus/jour = 1.5 (via CTE `daily_bonus` avec `LEAST(SUM(...), 1.5)`)
+- Malus illimites (via `SUM(LEAST(et.points, 0))`)
+- Seuls les events `status = 'approved'` comptent
 
-### 1.2 Ajout du cap bonus/jour (1.5 max)
+**Points a corriger:**
+1. **Tri ranking incomplet**: actuellement `ORDER BY score100 DESC, raw_points DESC` - manque `matricule ASC` comme tiebreaker
+2. **Filtre unite**: fonctionne mais pas passe au RPC (filtre cote frontend)
+3. **Pas de classement superviseurs/managers**
 
-Modifier la RPC pour appliquer un plafond de +1.5 points bonus par operateur par date:
+**Indexes existants (OK):**
+- `idx_events_status`, `idx_events_event_date`, `idx_events_operator_id`, `idx_events_event_type_id`, `idx_events_unit_id`, `idx_events_composite`
 
-```text
+---
+
+## Phase 1: Correction RPC Operateurs
+
+### 1.1 Ajout tiebreaker matricule
+
+Modifier le tri final de `get_year_ranking`:
+```sql
+ORDER BY score100 DESC, raw_points DESC, o.matricule ASC
+```
+
+### 1.2 Colonne rank calculee
+
+Ajouter une colonne `rank BIGINT` calculee via `ROW_NUMBER()` pour que le frontend n'ait pas a recalculer le rang.
+
+---
+
+## Phase 2: RPC Classement Superviseurs
+
+### 2.1 Nouvelle fonction `get_supervisor_ranking`
+
 Logique:
-1. Grouper les events bonus par (operator_id, event_date)
-2. Pour chaque groupe: cap = MIN(sum_bonus_jour, 1.5)
-3. Les malus restent illimites (pas de cap)
+1. Pour chaque superviseur (via `supervisor_operator_map` actif)
+2. Agreger les scores des operateurs assignes
+3. Calculer penalites:
+   - Events en attente > 5 : -2 points
+   - Delai validation moyen > 48h : -3 points
+4. Calculer deviations majeures de l'equipe
+
+**Schema retour:**
+```sql
+RETURNS TABLE (
+  supervisor_id UUID,
+  supervisor_name TEXT,
+  unit_name TEXT,
+  operators_count BIGINT,
+  avg_team_score NUMERIC,
+  pending_events BIGINT,
+  avg_validation_delay_hours NUMERIC,
+  major_deviations BIGINT,
+  supervisor_score NUMERIC,
+  rank BIGINT
+)
 ```
 
-### 1.3 Ajout champs audit sur events
-
-La table `events` contient deja:
-- `created_by` (present)
-- `source` (present - manual/import)
-- `validated_by` (present)
-
-**Ajouter**: colonne `approved_at TIMESTAMPTZ` pour tracer la date de validation.
-
-### 1.4 Regle 60 jours travailles
-
-La RPC retourne deja `work_days`. L'UI filtre ou affiche un indicateur pour les operateurs avec `work_days < 60`.
+**Formule score superviseur:**
+```
+supervisor_score = avg_team_score 
+  - (IF pending_events > 5 THEN 2 ELSE 0)
+  - (IF avg_validation_delay > 48 THEN 3 ELSE 0)
+```
 
 ---
 
-## Phase 2: Referentiels (Units, Lines, Shifts)
+## Phase 3: RPC Classement Managers
 
-### 2.1 Nouvelles tables
+### 3.1 Nouvelle fonction `get_manager_ranking`
 
+Logique:
+1. Pour chaque manager (role = 'manager' dans profiles)
+2. Agreger les scores de tous les operateurs de son unite
+3. Calculer metriques:
+   - Score moyen equipe (60%)
+   - Taux deviations majeures (20%)
+   - Delai validation moyen (20%)
+
+**Schema retour:**
 ```sql
--- Table des unites
-CREATE TABLE public.units (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL UNIQUE,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Table des lignes de production
-CREATE TABLE public.lines (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  unit_id UUID REFERENCES public.units(id) ON DELETE CASCADE,
-  code TEXT NOT NULL,
-  name TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(unit_id, code)
-);
-
--- Table des shifts
-CREATE TABLE public.shifts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code TEXT NOT NULL UNIQUE,
-  name TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
+RETURNS TABLE (
+  manager_id UUID,
+  manager_name TEXT,
+  unit_name TEXT,
+  operators_count BIGINT,
+  avg_unit_score NUMERIC,
+  major_deviation_rate NUMERIC,
+  avg_validation_delay_hours NUMERIC,
+  manager_score NUMERIC,
+  rank BIGINT
+)
 ```
 
-### 2.2 Donnees initiales
-
-```sql
-INSERT INTO units (name) VALUES 
-  ('DPI'), ('Sterile'), ('Fabrication'), 
-  ('Conditionnement'), ('Qualite');
-
-INSERT INTO shifts (code, name) VALUES 
-  ('A', 'Equipe A'), ('B', 'Equipe B'), ('C', 'Equipe C');
+**Formule score manager:**
 ```
-
-### 2.3 Modification table events
-
-```sql
-ALTER TABLE events 
-  ADD COLUMN unit_id UUID REFERENCES units(id),
-  ADD COLUMN line_id UUID REFERENCES lines(id),
-  ADD COLUMN shift_id UUID REFERENCES shifts(id);
+manager_score = 
+  (avg_unit_score * 0.6)
+  + ((100 - major_deviation_rate * 10) * 0.2)
+  + ((100 - LEAST(avg_validation_delay / 48 * 100, 100)) * 0.2)
 ```
-
-### 2.4 UI Settings
-
-Ajouter onglet "Referentiels" dans Settings (Manager uniquement) pour gerer units/lines/shifts.
 
 ---
 
-## Phase 3: Roles et Profils Enrichis
+## Phase 4: Nouvelle Page "Classement Hierarchique"
 
-### 3.1 Nouveau enum de roles
+### 4.1 Structure
 
-Remplacer le type `user_role` actuel par un enum etendu:
+Creer `src/pages/HierarchyRanking.tsx` avec:
+- Tabs: "Superviseurs" | "Managers"
+- Filtres: Annee, Unite (pour superviseurs)
+- Tableau avec colonnes specifiques a chaque role
+- Export CSV
 
-```sql
-CREATE TYPE app_role AS ENUM (
-  'super_admin', 
-  'admin_site', 
-  'manager_unite', 
-  'superviseur', 
-  'readonly'
-);
+### 4.2 Navigation
+
+Ajouter dans `AppSidebar.tsx`:
+```javascript
+{
+  title: 'Classement hiérarchique',
+  url: '/hierarchy-ranking',
+  icon: Users2,
+  roles: ['manager'],
+}
 ```
-
-### 3.2 Table user_roles (securite)
-
-Conformement aux bonnes pratiques, les roles seront stockes dans une table separee:
-
-```sql
-CREATE TABLE public.user_roles (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  role app_role NOT NULL,
-  UNIQUE(user_id, role)
-);
-```
-
-### 3.3 Modification table profiles
-
-```sql
-ALTER TABLE profiles 
-  ADD COLUMN unit_id UUID REFERENCES units(id),
-  ADD COLUMN manager_profile_id UUID REFERENCES profiles(id),
-  ADD COLUMN is_active BOOLEAN DEFAULT true;
-
--- Supprimer ancienne colonne role apres migration
-```
-
-### 3.4 Fonction Security Definer pour roles
-
-```sql
-CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.user_roles
-    WHERE user_id = _user_id AND role = _role
-  )
-$$;
-```
-
-### 3.5 RLS actualises
-
-Utiliser `has_role()` dans toutes les policies:
-- `super_admin`: acces total
-- `manager_unite`: acces limite a son `unit_id`
-- `superviseur`: acces a son unite + ses operateurs assignes
-- `readonly`: SELECT uniquement
 
 ---
 
-## Phase 4: Cascade Hierarchique
+## Phase 5: Tests Supplementaires
 
-### 4.1 Table supervisor_operator_map
+### 5.1 Tests a ajouter dans `scoring.test.ts`
 
-```sql
-CREATE TABLE public.supervisor_operator_map (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  supervisor_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
-  operator_id UUID REFERENCES operators(id) ON DELETE CASCADE NOT NULL,
-  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  end_date DATE,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(supervisor_id, operator_id, start_date)
-);
-```
+| Test | Description |
+|------|-------------|
+| Tri stable | Verifier que le tri score100 > raw_points > matricule est respecte |
+| Filtre unite | Verifier que seuls les operateurs de l'unite selectionnee apparaissent |
+| Aucun event | Operateur sans event doit avoir score 80 |
+| Seulement malus | Pas de cap sur les malus |
+| Seulement bonus | Cap a 1.5/jour |
 
-### 4.2 UI Manager
+### 5.2 Nouveaux tests RPC
 
-Ajouter page ou onglet "Affectations" dans Settings:
-- Liste des superviseurs avec leurs operateurs assignes
-- Interface pour assigner/retirer des operateurs
-- Filtrage par unite
+| Test | Description |
+|------|-------------|
+| Supervisor sans operateurs | Score = 0 ou absent |
+| Manager sans unite | Gerer gracieusement |
+| Penalite validation 48h | Verifier application |
 
 ---
 
-## Phase 5: Module Objectifs (Evaluation Superviseurs/Managers)
+## Resume des livrables
 
-### 5.1 Table objectives
+### Migrations SQL
 
-```sql
-CREATE TABLE public.objectives (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_profile_id UUID REFERENCES profiles(id) NOT NULL,
-  period_start DATE NOT NULL,
-  period_end DATE NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT,
-  weight DECIMAL(3,2) DEFAULT 1.0,
-  target_type TEXT, -- 'count', 'percentage', 'ratio'
-  target_value DECIMAL(10,2),
-  actual_value DECIMAL(10,2),
-  score_0_100 DECIMAL(5,2),
-  status TEXT DEFAULT 'draft', -- draft/submitted/approved
-  manager_comment TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-```
+| Fichier | Contenu |
+|---------|---------|
+| `update_operator_ranking.sql` | Correction tri + ajout colonne rank |
+| `create_supervisor_ranking_rpc.sql` | RPC `get_supervisor_ranking` |
+| `create_manager_ranking_rpc.sql` | RPC `get_manager_ranking` |
 
-### 5.2 Templates KPI
+### Fichiers React
 
-Definir des objectifs types:
-- Discipline retards/100j
-- Deviations minor/major par mois
-- SLA validation <48h
-- CAPA on-time %
-- Erreurs documentation/100
-
-### 5.3 UI Objectifs
-
-- Page `/objectives` pour visualiser/creer ses objectifs
-- Calcul automatique du score pondere: `SUM(score_0_100 * weight) / SUM(weight)`
+| Fichier | Action |
+|---------|--------|
+| `src/pages/HierarchyRanking.tsx` | Creer |
+| `src/components/layout/AppSidebar.tsx` | Ajouter lien navigation |
+| `src/App.tsx` | Ajouter route `/hierarchy-ranking` |
+| `src/test/scoring.test.ts` | Ajouter tests tri et filtres |
 
 ---
 
-## Phase 6: RPC et Performance
+## Details techniques
 
-### 6.1 Mise a jour RPC get_year_ranking
+### SQL: RPC get_supervisor_ranking
 
 ```sql
-CREATE OR REPLACE FUNCTION public.get_year_ranking(
+CREATE OR REPLACE FUNCTION public.get_supervisor_ranking(
   p_year integer,
   p_unit_id uuid DEFAULT NULL
 )
 RETURNS TABLE (
-  operator_id uuid,
-  matricule text,
-  full_name text,
-  unit text,
-  raw_points numeric,
-  score100 numeric,
-  note20 numeric,
-  positions_count bigint,
-  approved_events bigint,
-  work_days bigint
+  supervisor_id uuid,
+  supervisor_name text,
+  unit_name text,
+  operators_count bigint,
+  avg_team_score numeric,
+  pending_events bigint,
+  avg_validation_delay_hours numeric,
+  major_deviations bigint,
+  supervisor_score numeric,
+  rank bigint
 )
 LANGUAGE sql
 STABLE
 SET search_path = public
 AS $$
-  WITH daily_bonus AS (
-    -- Cap bonus a 1.5 par jour par operateur
+  WITH supervisor_operators AS (
     SELECT 
-      e.operator_id,
-      e.event_date,
-      LEAST(SUM(GREATEST(et.points, 0)), 1.5) as capped_bonus,
-      SUM(LEAST(et.points, 0)) as malus_sum
-    FROM events e
-    JOIN event_types et ON e.event_type_id = et.id
-    WHERE e.status = 'approved'
+      som.supervisor_id,
+      p.full_name as supervisor_name,
+      u.name as unit_name,
+      som.operator_id
+    FROM supervisor_operator_map som
+    JOIN profiles p ON p.id = som.supervisor_id
+    LEFT JOIN units u ON u.id = p.unit_id
+    WHERE som.start_date <= CURRENT_DATE
+      AND (som.end_date IS NULL OR som.end_date >= CURRENT_DATE)
+      AND (p_unit_id IS NULL OR p.unit_id = p_unit_id)
+  ),
+  operator_scores AS (
+    SELECT 
+      so.supervisor_id,
+      so.supervisor_name,
+      so.unit_name,
+      COUNT(DISTINCT so.operator_id) as op_count,
+      AVG(r.score100) as avg_score
+    FROM supervisor_operators so
+    LEFT JOIN LATERAL (
+      SELECT * FROM get_year_ranking(p_year) 
+      WHERE operator_id = so.operator_id
+    ) r ON true
+    GROUP BY so.supervisor_id, so.supervisor_name, so.unit_name
+  ),
+  pending_counts AS (
+    SELECT 
+      so.supervisor_id,
+      COUNT(*) as pending_count
+    FROM supervisor_operators so
+    JOIN events e ON e.operator_id = so.operator_id
+    WHERE e.status = 'pending'
       AND EXTRACT(YEAR FROM e.event_date) = p_year
-    GROUP BY e.operator_id, e.event_date
+    GROUP BY so.supervisor_id
   ),
-  operator_totals AS (
+  validation_delays AS (
     SELECT 
-      db.operator_id,
-      SUM(db.capped_bonus + db.malus_sum) as event_points,
-      COUNT(*) as event_count,
-      COUNT(DISTINCT db.event_date) as distinct_days
-    FROM daily_bonus db
-    GROUP BY db.operator_id
+      so.supervisor_id,
+      AVG(EXTRACT(EPOCH FROM (e.approved_at - e.created_at)) / 3600) as avg_delay
+    FROM supervisor_operators so
+    JOIN events e ON e.operator_id = so.operator_id
+    WHERE e.status = 'approved'
+      AND e.approved_at IS NOT NULL
+      AND EXTRACT(YEAR FROM e.event_date) = p_year
+    GROUP BY so.supervisor_id
   ),
-  operator_positions AS (
-    SELECT operator_id, COUNT(*) as pos_count
-    FROM operator_positions
-    GROUP BY operator_id
+  major_devs AS (
+    SELECT 
+      so.supervisor_id,
+      COUNT(*) as dev_count
+    FROM supervisor_operators so
+    JOIN events e ON e.operator_id = so.operator_id
+    JOIN event_types et ON et.id = e.event_type_id
+    WHERE e.status = 'approved'
+      AND et.code = 'DEVIATION_MAJEURE'
+      AND EXTRACT(YEAR FROM e.event_date) = p_year
+    GROUP BY so.supervisor_id
+  ),
+  scores AS (
+    SELECT 
+      os.supervisor_id,
+      os.supervisor_name,
+      os.unit_name,
+      os.op_count,
+      COALESCE(os.avg_score, 80) as avg_score,
+      COALESCE(pc.pending_count, 0) as pending,
+      COALESCE(vd.avg_delay, 0) as avg_delay,
+      COALESCE(md.dev_count, 0) as major_devs,
+      GREATEST(0, COALESCE(os.avg_score, 80)
+        - (CASE WHEN COALESCE(pc.pending_count, 0) > 5 THEN 2 ELSE 0 END)
+        - (CASE WHEN COALESCE(vd.avg_delay, 0) > 48 THEN 3 ELSE 0 END)
+      ) as final_score
+    FROM operator_scores os
+    LEFT JOIN pending_counts pc ON pc.supervisor_id = os.supervisor_id
+    LEFT JOIN validation_delays vd ON vd.supervisor_id = os.supervisor_id
+    LEFT JOIN major_devs md ON md.supervisor_id = os.supervisor_id
   )
   SELECT 
-    o.id,
-    o.matricule,
-    o.full_name,
-    o.unit,
-    COALESCE(ot.event_points, 0) 
-      + GREATEST(0, COALESCE(op.pos_count, 0) - 2) * 0.5 as raw_points,
-    LEAST(100, GREATEST(0, 80 
-      + COALESCE(ot.event_points, 0) 
-      + GREATEST(0, COALESCE(op.pos_count, 0) - 2) * 0.5)) as score100,
-    ROUND(LEAST(100, GREATEST(0, 80 
-      + COALESCE(ot.event_points, 0) 
-      + GREATEST(0, COALESCE(op.pos_count, 0) - 2) * 0.5)) / 5, 1) as note20,
-    COALESCE(op.pos_count, 0),
-    COALESCE(ot.event_count, 0),
-    COALESCE(ot.distinct_days, 0)
-  FROM operators o
-  LEFT JOIN operator_totals ot ON o.id = ot.operator_id
-  LEFT JOIN operator_positions op ON o.id = op.operator_id
-  WHERE o.is_active = true
-    AND (p_unit_id IS NULL OR o.unit_id = p_unit_id)
-  ORDER BY score100 DESC, raw_points DESC;
+    s.supervisor_id,
+    s.supervisor_name,
+    s.unit_name,
+    s.op_count,
+    ROUND(s.avg_score, 1),
+    s.pending,
+    ROUND(s.avg_delay, 1),
+    s.major_devs,
+    ROUND(s.final_score, 1),
+    ROW_NUMBER() OVER (ORDER BY s.final_score DESC, s.supervisor_name ASC)
+  FROM scores s
+  ORDER BY final_score DESC, supervisor_name ASC;
 $$;
 ```
 
-### 6.2 Index supplementaires
+### SQL: RPC get_manager_ranking
 
 ```sql
-CREATE INDEX IF NOT EXISTS idx_events_unit_id ON events(unit_id);
-CREATE INDEX IF NOT EXISTS idx_events_composite 
-  ON events(operator_id, status, event_date);
-CREATE INDEX IF NOT EXISTS idx_supervisor_operator_map_supervisor 
-  ON supervisor_operator_map(supervisor_id);
-CREATE INDEX IF NOT EXISTS idx_objectives_owner 
-  ON objectives(owner_profile_id);
+CREATE OR REPLACE FUNCTION public.get_manager_ranking(p_year integer)
+RETURNS TABLE (
+  manager_id uuid,
+  manager_name text,
+  unit_name text,
+  operators_count bigint,
+  avg_unit_score numeric,
+  major_deviation_rate numeric,
+  avg_validation_delay_hours numeric,
+  manager_score numeric,
+  rank bigint
+)
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  WITH managers AS (
+    SELECT 
+      p.id,
+      p.full_name,
+      u.name as unit_name,
+      p.unit_id
+    FROM profiles p
+    LEFT JOIN units u ON u.id = p.unit_id
+    WHERE p.role = 'manager' AND p.is_active = true
+  ),
+  unit_scores AS (
+    SELECT 
+      m.id as manager_id,
+      m.full_name,
+      m.unit_name,
+      COUNT(DISTINCT o.id) as op_count,
+      AVG(r.score100) as avg_score
+    FROM managers m
+    LEFT JOIN operators o ON o.unit = m.unit_name AND o.is_active = true
+    LEFT JOIN LATERAL (
+      SELECT * FROM get_year_ranking(p_year) 
+      WHERE operator_id = o.id
+    ) r ON true
+    GROUP BY m.id, m.full_name, m.unit_name
+  ),
+  unit_deviations AS (
+    SELECT 
+      m.id as manager_id,
+      COUNT(*) FILTER (WHERE et.code = 'DEVIATION_MAJEURE') as major_count,
+      COUNT(*) as total_events
+    FROM managers m
+    JOIN operators o ON o.unit = m.unit_name
+    JOIN events e ON e.operator_id = o.id
+    JOIN event_types et ON et.id = e.event_type_id
+    WHERE e.status = 'approved'
+      AND EXTRACT(YEAR FROM e.event_date) = p_year
+    GROUP BY m.id
+  ),
+  validation_delays AS (
+    SELECT 
+      m.id as manager_id,
+      AVG(EXTRACT(EPOCH FROM (e.approved_at - e.created_at)) / 3600) as avg_delay
+    FROM managers m
+    JOIN operators o ON o.unit = m.unit_name
+    JOIN events e ON e.operator_id = o.id
+    WHERE e.status = 'approved'
+      AND e.approved_at IS NOT NULL
+      AND EXTRACT(YEAR FROM e.event_date) = p_year
+    GROUP BY m.id
+  ),
+  scores AS (
+    SELECT 
+      us.manager_id,
+      us.full_name,
+      us.unit_name,
+      us.op_count,
+      COALESCE(us.avg_score, 80) as avg_score,
+      CASE 
+        WHEN COALESCE(ud.total_events, 0) = 0 THEN 0
+        ELSE (COALESCE(ud.major_count, 0)::numeric / ud.total_events * 100)
+      END as dev_rate,
+      COALESCE(vd.avg_delay, 0) as avg_delay,
+      -- Score: 60% team + 20% discipline + 20% delay
+      (COALESCE(us.avg_score, 80) * 0.6)
+      + (GREATEST(0, 100 - COALESCE(ud.major_count, 0)::numeric / NULLIF(ud.total_events, 0) * 1000) * 0.2)
+      + (GREATEST(0, 100 - LEAST(COALESCE(vd.avg_delay, 0) / 48 * 100, 100)) * 0.2) as final_score
+    FROM unit_scores us
+    LEFT JOIN unit_deviations ud ON ud.manager_id = us.manager_id
+    LEFT JOIN validation_delays vd ON vd.manager_id = us.manager_id
+  )
+  SELECT 
+    s.manager_id,
+    s.full_name,
+    s.unit_name,
+    s.op_count,
+    ROUND(s.avg_score, 1),
+    ROUND(s.dev_rate, 2),
+    ROUND(s.avg_delay, 1),
+    ROUND(s.final_score, 1),
+    ROW_NUMBER() OVER (ORDER BY s.final_score DESC, s.full_name ASC)
+  FROM scores s
+  ORDER BY final_score DESC, full_name ASC;
+$$;
 ```
 
 ---
 
-## Phase 7: Tests
+## Ordre d'execution
 
-### 7.1 Tests unitaires
-
-Ajouter dans `src/test/`:
-- `scoring.test.ts`: verification formules calcul
-- `import.test.ts`: parsing CSV et generation events
-- `rls.test.ts`: verification acces selon roles
-
-### 7.2 Cas limites a couvrir
-
-- Operateur avec 0 events
-- Cap bonus/jour exactement a 1.5
-- Operateur avec 59 vs 60 jours travailles
-- Import avec matricule inexistant
-
----
-
-## Resume des fichiers a modifier
-
-### Migrations SQL
-
-1. `add_approved_at_column.sql` - Colonne audit sur events
-2. `create_referential_tables.sql` - Tables units, lines, shifts
-3. `create_user_roles_system.sql` - Table user_roles + fonction has_role
-4. `create_supervisor_operator_map.sql` - Table affectations
-5. `create_objectives_table.sql` - Table objectifs
-6. `update_ranking_rpc.sql` - RPC avec cap bonus et filtre unit
-
-### Composants React
-
-| Fichier | Modifications |
-|---------|---------------|
-| `Settings.tsx` | Onglets Referentiels + Affectations |
-| `Ranking.tsx` | Filtre par unite + indicateur <60 jours |
-| `NewEvent.tsx` | Selects pour unit/line/shift |
-| `Validation.tsx` | Afficher approved_at apres validation |
-| `AuthContext.tsx` | Adapter lecture roles depuis user_roles |
-
-### Nouvelles pages
-
-| Page | Route | Description |
-|------|-------|-------------|
-| `Objectives.tsx` | `/objectives` | Gestion objectifs superviseurs/managers |
-
----
-
-## Dependances et ordre d'execution
-
-```text
-Phase 1 (Scoring)
-    |
-    v
-Phase 2 (Referentiels) --> Phase 3 (Roles)
-    |                           |
-    v                           v
-Phase 4 (Hierarchie) <---------+
-    |
-    v
-Phase 5 (Objectifs)
-    |
-    v
-Phase 6 (Perf) + Phase 7 (Tests)
-```
-
----
-
-## Notes techniques
-
-- Toutes les migrations utilisent `IF NOT EXISTS` pour etre idempotentes
-- Les RLS policies utilisent `SECURITY DEFINER` pour eviter la recursion infinie
-- Le front ne fait aucun fetch global au boot (charge uniquement route visitee)
-- Timeout 8s + try/catch/finally sur tous les appels Supabase critiques
-
+1. Migration: Corriger `get_year_ranking` (tri + rank)
+2. Migration: Creer `get_supervisor_ranking`
+3. Migration: Creer `get_manager_ranking`
+4. Frontend: Creer `HierarchyRanking.tsx`
+5. Frontend: Mettre a jour navigation
+6. Tests: Ajouter tests scoring
