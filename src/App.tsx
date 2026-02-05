@@ -18,6 +18,7 @@ import Scoring from "@/pages/Scoring";
 import Ranking from "@/pages/Ranking";
 import Settings from "@/pages/Settings";
 import Objectives from "@/pages/Objectives";
+import HierarchyRanking from "@/pages/HierarchyRanking";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -120,6 +121,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <Objectives />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/hierarchy-ranking"
+              element={
+                <ProtectedRoute requireManager>
+                  <AppLayout>
+                    <HierarchyRanking />
                   </AppLayout>
                 </ProtectedRoute>
               }

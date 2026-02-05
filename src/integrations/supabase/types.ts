@@ -508,37 +508,51 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_year_ranking:
-        | {
-            Args: { p_year: number }
-            Returns: {
-              approved_events: number
-              full_name: string
-              matricule: string
-              note20: number
-              operator_id: string
-              positions_count: number
-              raw_points: number
-              score100: number
-              unit: string
-              work_days: number
-            }[]
-          }
-        | {
-            Args: { p_unit_id?: string; p_year: number }
-            Returns: {
-              approved_events: number
-              full_name: string
-              matricule: string
-              note20: number
-              operator_id: string
-              positions_count: number
-              raw_points: number
-              score100: number
-              unit: string
-              work_days: number
-            }[]
-          }
+      get_manager_ranking: {
+        Args: { p_year: number }
+        Returns: {
+          avg_unit_score: number
+          avg_validation_delay_hours: number
+          major_deviation_rate: number
+          manager_id: string
+          manager_name: string
+          manager_score: number
+          operators_count: number
+          rank: number
+          unit_name: string
+        }[]
+      }
+      get_supervisor_ranking: {
+        Args: { p_unit_id?: string; p_year: number }
+        Returns: {
+          avg_team_score: number
+          avg_validation_delay_hours: number
+          major_deviations: number
+          operators_count: number
+          pending_events: number
+          rank: number
+          supervisor_id: string
+          supervisor_name: string
+          supervisor_score: number
+          unit_name: string
+        }[]
+      }
+      get_year_ranking: {
+        Args: { p_unit_id?: string; p_year: number }
+        Returns: {
+          approved_events: number
+          full_name: string
+          matricule: string
+          note20: number
+          operator_id: string
+          positions_count: number
+          rank: number
+          raw_points: number
+          score100: number
+          unit: string
+          work_days: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

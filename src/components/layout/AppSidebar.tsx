@@ -34,6 +34,7 @@ import {
   Upload,
   ListChecks,
   Target,
+  Users2,
 } from 'lucide-react';
 
 const navigationItems = [
@@ -84,6 +85,12 @@ const navigationItems = [
     url: '/objectives',
     icon: Target,
     roles: ['supervisor', 'manager'],
+  },
+  {
+    title: 'Classement hiérarchique',
+    url: '/hierarchy-ranking',
+    icon: Users2,
+    roles: ['manager'],
   },
 ];
 
