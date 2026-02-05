@@ -30,10 +30,9 @@ import {
 } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Check, ChevronsUpDown, Loader2, FileText, ArrowLeft } from 'lucide-react';
+import { Check, ChevronsUpDown, Loader2, FileText, ArrowLeft, ImagePlus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { fr } from 'date-fns/locale';
 
 export default function NewEvent() {
   const navigate = useNavigate();
@@ -47,6 +46,9 @@ export default function NewEvent() {
   const [shift, setShift] = useState('');
   const [line, setLine] = useState('');
   const [description, setDescription] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Récupérer les opérateurs
   const { data: operators } = useQuery({
@@ -81,10 +83,56 @@ export default function NewEvent() {
 
   const selectedEventTypeData = eventTypes?.find((et) => et.id === selectedEventType);
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast.error('Seules les images sont acceptées');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('L\'image ne doit pas dépasser 5 Mo');
+        return;
+      }
+      setAttachmentFile(file);
+      setAttachmentPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const removeAttachment = () => {
+    setAttachmentFile(null);
+    if (attachmentPreview) {
+      URL.revokeObjectURL(attachmentPreview);
+      setAttachmentPreview(null);
+    }
+  };
+
   // Mutation pour créer l'événement
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!profile?.id) throw new Error('Non authentifié');
+
+      let attachmentUrl: string | null = null;
+
+      // Upload de la pièce jointe si présente
+      if (attachmentFile) {
+        setIsUploading(true);
+        const fileExt = attachmentFile.name.split('.').pop();
+        const fileName = `${profile.id}/${Date.now()}.${fileExt}`;
+
+        const { error: uploadError, data: uploadData } = await supabase.storage
+          .from('event-attachments')
+          .upload(fileName, attachmentFile);
+
+        if (uploadError) throw new Error('Erreur lors de l\'upload de l\'image');
+
+        const { data: publicUrlData } = supabase.storage
+          .from('event-attachments')
+          .getPublicUrl(fileName);
+
+        attachmentUrl = publicUrlData.publicUrl;
+        setIsUploading(false);
+      }
 
       const { error } = await supabase.from('events').insert({
         operator_id: selectedOperator,
@@ -95,6 +143,7 @@ export default function NewEvent() {
         shift: shift || null,
         line: line || null,
         description: description || null,
+        attachment_url: attachmentUrl,
         status: 'pending',
         source: 'manual',
       });
@@ -108,6 +157,7 @@ export default function NewEvent() {
       navigate('/dashboard');
     },
     onError: (error: any) => {
+      setIsUploading(false);
       toast.error('Erreur', { description: error.message });
     },
   });
@@ -322,6 +372,48 @@ export default function NewEvent() {
               </div>
             </div>
 
+            {/* Pièce jointe photo */}
+            <div className="space-y-2">
+              <Label>Pièce jointe (photo)</Label>
+              {attachmentPreview ? (
+                <div className="relative inline-block">
+                  <img
+                    src={attachmentPreview}
+                    alt="Aperçu"
+                    className="max-w-xs max-h-48 rounded-lg border object-cover"
+                  />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="icon"
+                    className="absolute -top-2 -right-2 h-6 w-6"
+                    onClick={removeAttachment}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    id="attachment-upload"
+                  />
+                  <label
+                    htmlFor="attachment-upload"
+                    className="cursor-pointer flex flex-col items-center gap-2"
+                  >
+                    <ImagePlus className="h-8 w-8 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      Cliquez pour ajouter une photo (max 5 Mo)
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
+
             {/* Description */}
             <div className="space-y-2">
               <Label htmlFor="description">
@@ -352,13 +444,13 @@ export default function NewEvent() {
               </Button>
               <Button
                 type="submit"
-                disabled={createMutation.isPending}
+                disabled={createMutation.isPending || isUploading}
                 className="flex-1"
               >
-                {createMutation.isPending && (
+                {(createMutation.isPending || isUploading) && (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 )}
-                Soumettre l'événement
+                {isUploading ? 'Upload en cours...' : 'Soumettre l\'événement'}
               </Button>
             </div>
           </form>
