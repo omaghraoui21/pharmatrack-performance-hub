@@ -52,6 +52,7 @@ export type Database = {
       }
       events: {
         Row: {
+          approved_at: string | null
           attachment_url: string | null
           created_at: string
           created_by: string
@@ -61,15 +62,19 @@ export type Database = {
           event_type_id: string
           id: string
           line: string | null
+          line_id: string | null
           operator_id: string
           rejection_note: string | null
           shift: string | null
+          shift_id: string | null
           source: string | null
           status: Database["public"]["Enums"]["event_status"]
+          unit_id: string | null
           updated_at: string
           validated_by: string | null
         }
         Insert: {
+          approved_at?: string | null
           attachment_url?: string | null
           created_at?: string
           created_by: string
@@ -79,15 +84,19 @@ export type Database = {
           event_type_id: string
           id?: string
           line?: string | null
+          line_id?: string | null
           operator_id: string
           rejection_note?: string | null
           shift?: string | null
+          shift_id?: string | null
           source?: string | null
           status?: Database["public"]["Enums"]["event_status"]
+          unit_id?: string | null
           updated_at?: string
           validated_by?: string | null
         }
         Update: {
+          approved_at?: string | null
           attachment_url?: string | null
           created_at?: string
           created_by?: string
@@ -97,11 +106,14 @@ export type Database = {
           event_type_id?: string
           id?: string
           line?: string | null
+          line_id?: string | null
           operator_id?: string
           rejection_note?: string | null
           shift?: string | null
+          shift_id?: string | null
           source?: string | null
           status?: Database["public"]["Enums"]["event_status"]
+          unit_id?: string | null
           updated_at?: string
           validated_by?: string | null
         }
@@ -121,6 +133,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "events_line_id_fkey"
+            columns: ["line_id"]
+            isOneToOne: false
+            referencedRelation: "lines"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "events_operator_id_fkey"
             columns: ["operator_id"]
             isOneToOne: false
@@ -128,8 +147,116 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "events_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "events_validated_by_fkey"
             columns: ["validated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lines: {
+        Row: {
+          code: string
+          created_at: string | null
+          id: string
+          name: string
+          unit_id: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          id?: string
+          name: string
+          unit_id?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          unit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lines_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      objectives: {
+        Row: {
+          actual_value: number | null
+          created_at: string | null
+          description: string | null
+          id: string
+          manager_comment: string | null
+          owner_profile_id: string
+          period_end: string
+          period_start: string
+          score_0_100: number | null
+          status: string | null
+          target_type: string | null
+          target_value: number | null
+          title: string
+          updated_at: string | null
+          weight: number | null
+        }
+        Insert: {
+          actual_value?: number | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          manager_comment?: string | null
+          owner_profile_id: string
+          period_end: string
+          period_start: string
+          score_0_100?: number | null
+          status?: string | null
+          target_type?: string | null
+          target_value?: number | null
+          title: string
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Update: {
+          actual_value?: number | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          manager_comment?: string | null
+          owner_profile_id?: string
+          period_end?: string
+          period_start?: string
+          score_0_100?: number | null
+          status?: string | null
+          target_type?: string | null
+          target_value?: number | null
+          title?: string
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "objectives_owner_profile_id_fkey"
+            columns: ["owner_profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -229,7 +356,10 @@ export type Database = {
           email: string
           full_name: string
           id: string
+          is_active: boolean | null
+          manager_profile_id: string | null
           role: Database["public"]["Enums"]["user_role"]
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -237,7 +367,10 @@ export type Database = {
           email: string
           full_name: string
           id: string
+          is_active?: boolean | null
+          manager_profile_id?: string | null
           role?: Database["public"]["Enums"]["user_role"]
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -245,8 +378,128 @@ export type Database = {
           email?: string
           full_name?: string
           id?: string
+          is_active?: boolean | null
+          manager_profile_id?: string | null
           role?: Database["public"]["Enums"]["user_role"]
+          unit_id?: string | null
           updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_manager_profile_id_fkey"
+            columns: ["manager_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shifts: {
+        Row: {
+          code: string
+          created_at: string | null
+          id: string
+          name: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          id?: string
+          name?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          id?: string
+          name?: string | null
+        }
+        Relationships: []
+      }
+      supervisor_operator_map: {
+        Row: {
+          created_at: string | null
+          end_date: string | null
+          id: string
+          operator_id: string
+          start_date: string
+          supervisor_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          operator_id: string
+          start_date?: string
+          supervisor_id: string
+        }
+        Update: {
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          operator_id?: string
+          start_date?: string
+          supervisor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "supervisor_operator_map_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "supervisor_operator_map_supervisor_id_fkey"
+            columns: ["supervisor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      units: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -255,23 +508,53 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_year_ranking: {
-        Args: { p_year: number }
-        Returns: {
-          approved_events: number
-          full_name: string
-          matricule: string
-          note20: number
-          operator_id: string
-          positions_count: number
-          raw_points: number
-          score100: number
-          unit: string
-          work_days: number
-        }[]
+      get_year_ranking:
+        | {
+            Args: { p_year: number }
+            Returns: {
+              approved_events: number
+              full_name: string
+              matricule: string
+              note20: number
+              operator_id: string
+              positions_count: number
+              raw_points: number
+              score100: number
+              unit: string
+              work_days: number
+            }[]
+          }
+        | {
+            Args: { p_unit_id?: string; p_year: number }
+            Returns: {
+              approved_events: number
+              full_name: string
+              matricule: string
+              note20: number
+              operator_id: string
+              positions_count: number
+              raw_points: number
+              score100: number
+              unit: string
+              work_days: number
+            }[]
+          }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
       }
+      is_manager_or_above: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
+      app_role:
+        | "super_admin"
+        | "admin_site"
+        | "manager_unite"
+        | "superviseur"
+        | "readonly"
       event_category:
         | "gmp"
         | "hse"
@@ -410,6 +693,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: [
+        "super_admin",
+        "admin_site",
+        "manager_unite",
+        "superviseur",
+        "readonly",
+      ],
       event_category: [
         "gmp",
         "hse",

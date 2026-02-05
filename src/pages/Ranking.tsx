@@ -19,8 +19,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Trophy, Download, Loader2, Medal, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Trophy, Download, Loader2, Medal, AlertTriangle, RefreshCw, Clock } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface RankingEntry {
   operator_id: string;
@@ -35,16 +43,41 @@ interface RankingEntry {
   work_days: number;
 }
 
+interface Unit {
+  id: string;
+  name: string;
+}
+
 export default function Ranking() {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear.toString());
+  const [selectedUnit, setSelectedUnit] = useState<string>('all');
+  const [hideUnder60Days, setHideUnder60Days] = useState(false);
+
+  // Fetch units
+  const { data: units } = useQuery({
+    queryKey: ['units'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('units')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      return data as Unit[];
+    },
+  });
 
   // Récupérer le classement via RPC
   const { data: ranking, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['ranking', selectedYear],
+    queryKey: ['ranking', selectedYear, selectedUnit],
     queryFn: async () => {
+      const params: { p_year: number; p_unit_id?: string } = { 
+        p_year: parseInt(selectedYear) 
+      };
+      
+      // Note: The RPC now accepts p_unit_id but we filter client-side for unit name matching
       const { data, error } = await supabase
-        .rpc('get_year_ranking', { p_year: parseInt(selectedYear) });
+        .rpc('get_year_ranking', params);
 
       if (error) {
         console.error('[Ranking] supabase error:', error);
@@ -58,11 +91,18 @@ export default function Ranking() {
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
-  const handleExport = () => {
-    if (!ranking) return;
+  // Filter by unit and work_days
+  const filteredRanking = ranking?.filter((entry) => {
+    const matchesUnit = selectedUnit === 'all' || entry.unit === selectedUnit;
+    const meetsWorkDays = !hideUnder60Days || entry.work_days >= 60;
+    return matchesUnit && meetsWorkDays;
+  });
 
-    const headers = ['Rang', 'Matricule', 'Nom', 'Unité', 'Points bruts', 'Score/100', 'Note/20', 'Postes maîtrisés'];
-    const rows = ranking.map((entry, index) => [
+  const handleExport = () => {
+    if (!filteredRanking) return;
+
+    const headers = ['Rang', 'Matricule', 'Nom', 'Unité', 'Points bruts', 'Score/100', 'Note/20', 'Postes maîtrisés', 'Jours travaillés'];
+    const rows = filteredRanking.map((entry, index) => [
       index + 1,
       entry.matricule,
       entry.full_name,
@@ -71,6 +111,7 @@ export default function Ranking() {
       Number(entry.score100).toFixed(1),
       Number(entry.note20).toFixed(1),
       entry.positions_count,
+      entry.work_days,
     ]);
 
     const csvContent = [
@@ -81,7 +122,7 @@ export default function Ranking() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `classement_${selectedYear}.csv`;
+    link.download = `classement_${selectedYear}${selectedUnit !== 'all' ? `_${selectedUnit}` : ''}.csv`;
     link.click();
   };
 
@@ -108,7 +149,7 @@ export default function Ranking() {
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Select value={selectedYear} onValueChange={setSelectedYear}>
             <SelectTrigger className="w-[120px]">
               <SelectValue placeholder="Année" />
@@ -122,11 +163,37 @@ export default function Ranking() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" onClick={handleExport} disabled={!ranking?.length}>
+          <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Unité" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les unités</SelectItem>
+              {units?.map((unit) => (
+                <SelectItem key={unit.id} value={unit.name}>
+                  {unit.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Button variant="outline" onClick={handleExport} disabled={!filteredRanking?.length}>
             <Download className="h-4 w-4 mr-2" />
             Exporter CSV
           </Button>
         </div>
+      </div>
+
+      {/* Filter options */}
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="hide-under-60"
+          checked={hideUnder60Days}
+          onCheckedChange={(checked) => setHideUnder60Days(checked as boolean)}
+        />
+        <Label htmlFor="hide-under-60" className="text-sm text-muted-foreground cursor-pointer">
+          Masquer les opérateurs avec moins de 60 jours travaillés
+        </Label>
       </div>
 
       <Card>
@@ -134,9 +201,12 @@ export default function Ranking() {
           <CardTitle className="flex items-center gap-2">
             <Trophy className="h-5 w-5 text-warning" />
             Classement {selectedYear}
+            {selectedUnit !== 'all' && (
+              <Badge variant="secondary">{selectedUnit}</Badge>
+            )}
           </CardTitle>
           <CardDescription>
-            Classement basé sur les événements approuvés. Score de base: 80/100.
+            Classement basé sur les événements approuvés. Score de base: 80/100. Cap bonus: +1.5/jour.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -156,7 +226,7 @@ export default function Ranking() {
                 </Button>
               </AlertDescription>
             </Alert>
-          ) : ranking && ranking.length > 0 ? (
+          ) : filteredRanking && filteredRanking.length > 0 ? (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
@@ -169,11 +239,15 @@ export default function Ranking() {
                     <TableHead className="text-right">Score/100</TableHead>
                     <TableHead className="text-right">Note/20</TableHead>
                     <TableHead className="text-right">Postes</TableHead>
+                    <TableHead className="text-right">Jours</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {ranking.map((entry, index) => (
-                    <TableRow key={entry.operator_id}>
+                  {filteredRanking.map((entry, index) => (
+                    <TableRow 
+                      key={entry.operator_id}
+                      className={entry.work_days < 60 ? 'opacity-60' : ''}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {index < 3 ? (
@@ -186,7 +260,24 @@ export default function Ranking() {
                         </div>
                       </TableCell>
                       <TableCell className="font-mono">{entry.matricule}</TableCell>
-                      <TableCell className="font-medium">{entry.full_name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {entry.full_name}
+                          {entry.work_days < 60 && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  <Clock className="h-4 w-4 text-warning" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>Moins de 60 jours travaillés ({entry.work_days}j)</p>
+                                  <p className="text-xs text-muted-foreground">Non éligible au classement officiel</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>{entry.unit}</TableCell>
                       <TableCell className="text-right">
                         <span
@@ -219,6 +310,11 @@ export default function Ranking() {
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {entry.positions_count}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={entry.work_days < 60 ? 'text-warning' : 'text-muted-foreground'}>
+                          {entry.work_days}
+                        </span>
                       </TableCell>
                     </TableRow>
                   ))}

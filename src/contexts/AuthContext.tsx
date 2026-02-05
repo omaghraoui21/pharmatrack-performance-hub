@@ -3,24 +3,30 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
 type UserRole = 'supervisor' | 'manager';
+type AppRole = 'super_admin' | 'admin_site' | 'manager_unite' | 'superviseur' | 'readonly';
 
 interface Profile {
   id: string;
   email: string;
   full_name: string;
   role: UserRole;
+  unit_id?: string | null;
+  is_active?: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
+  appRoles: AppRole[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string, role: UserRole) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   isManager: boolean;
   isSupervisor: boolean;
+  isSuperAdmin: boolean;
+  hasRole: (role: AppRole) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,6 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [appRoles, setAppRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
@@ -46,6 +53,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return data as Profile;
   };
 
+  const fetchUserRoles = async (userId: string): Promise<AppRole[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Erreur lors du chargement des rôles:', error);
+        return [];
+      }
+
+      return (data?.map(r => r.role as AppRole) || []);
+    } catch (err) {
+      console.error('Exception lors du chargement des rôles:', err);
+      return [];
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -58,13 +84,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Important: ne pas appeler la DB directement dans onAuthStateChange
       setTimeout(() => {
         if (!mounted) return;
-        fetchProfile(userId)
-          .then((profileData) => {
+        
+        Promise.all([
+          fetchProfile(userId),
+          fetchUserRoles(userId)
+        ])
+          .then(([profileData, roles]) => {
             if (!mounted) return;
             setProfile(profileData);
+            setAppRoles(roles);
           })
           .catch((err) => {
-            console.error('[Auth] Error fetching profile:', err);
+            console.error('[Auth] Error fetching profile/roles:', err);
           });
       }, 0);
     };
@@ -91,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         fetchAndSetProfile(session.user.id);
       } else {
         setProfile(null);
+        setAppRoles([]);
       }
     });
 
@@ -108,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           fetchAndSetProfile(session.user.id);
         } else {
           setProfile(null);
+          setAppRoles([]);
         }
       })
       .catch((err) => {
@@ -149,10 +182,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setSession(null);
     setProfile(null);
+    setAppRoles([]);
   };
 
+  // Legacy role checks (based on profiles.role)
   const isManager = profile?.role === 'manager';
   const isSupervisor = profile?.role === 'supervisor';
+  
+  // New role checks (based on user_roles table)
+  const isSuperAdmin = appRoles.includes('super_admin');
+  
+  const hasRole = (role: AppRole) => appRoles.includes(role);
 
   return (
     <AuthContext.Provider
@@ -160,12 +200,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         session,
         profile,
+        appRoles,
         loading,
         signIn,
         signUp,
         signOut,
         isManager,
         isSupervisor,
+        isSuperAdmin,
+        hasRole,
       }}
     >
       {children}

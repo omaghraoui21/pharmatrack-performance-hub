@@ -17,6 +17,7 @@ import Import from "@/pages/Import";
 import Scoring from "@/pages/Scoring";
 import Ranking from "@/pages/Ranking";
 import Settings from "@/pages/Settings";
+import Objectives from "@/pages/Objectives";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -109,6 +110,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <Settings />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/objectives"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <Objectives />
                   </AppLayout>
                 </ProtectedRoute>
               }

@@ -33,6 +33,7 @@ import {
   ChevronUp,
   Upload,
   ListChecks,
+  Target,
 } from 'lucide-react';
 
 const navigationItems = [
@@ -76,6 +77,12 @@ const navigationItems = [
     title: 'Classement annuel',
     url: '/ranking',
     icon: Trophy,
+    roles: ['supervisor', 'manager'],
+  },
+  {
+    title: 'Objectifs',
+    url: '/objectives',
+    icon: Target,
     roles: ['supervisor', 'manager'],
   },
 ];
