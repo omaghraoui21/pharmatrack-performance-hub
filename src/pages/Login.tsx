@@ -33,37 +33,60 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signIn(loginEmail, loginPassword);
+    try {
+      const { error } = await signIn(loginEmail, loginPassword);
 
-    if (error) {
-      toast.error('Échec de la connexion', {
-        description: 'Email ou mot de passe incorrect.',
-      });
-    } else {
+      if (error) {
+        toast.error('Échec de la connexion', {
+          description: error.message || 'Email ou mot de passe incorrect.',
+        });
+        console.error('[Login] signIn error:', error);
+        return;
+      }
+
       toast.success('Connexion réussie');
       navigate(from, { replace: true });
+    } catch (err: any) {
+      console.error('[Login] signIn exception:', err);
+      toast.error('Erreur de connexion', {
+        description: err?.message || 'Veuillez réessayer.',
+      });
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signUp(signupEmail, signupPassword, signupName, signupRole);
+    try {
+      const { error } = await signUp(
+        signupEmail,
+        signupPassword,
+        signupName,
+        signupRole
+      );
 
-    if (error) {
-      toast.error('Échec de l\'inscription', {
-        description: error.message,
-      });
-    } else {
+      if (error) {
+        console.error('[Login] signUp error:', error);
+        toast.error("Échec de l'inscription", {
+          description: error.message,
+        });
+        return;
+      }
+
       toast.success('Inscription réussie', {
         description: 'Vérifiez votre email pour confirmer votre compte.',
       });
+    } catch (err: any) {
+      console.error('[Login] signUp exception:', err);
+      toast.error("Erreur d'inscription", {
+        description: err?.message || 'Veuillez réessayer.',
+      });
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   return (
