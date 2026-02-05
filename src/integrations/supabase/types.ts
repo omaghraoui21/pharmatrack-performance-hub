@@ -52,6 +52,7 @@ export type Database = {
       }
       events: {
         Row: {
+          attachment_url: string | null
           created_at: string
           created_by: string
           description: string | null
@@ -69,6 +70,7 @@ export type Database = {
           validated_by: string | null
         }
         Insert: {
+          attachment_url?: string | null
           created_at?: string
           created_by: string
           description?: string | null
@@ -86,6 +88,7 @@ export type Database = {
           validated_by?: string | null
         }
         Update: {
+          attachment_url?: string | null
           created_at?: string
           created_by?: string
           description?: string | null
