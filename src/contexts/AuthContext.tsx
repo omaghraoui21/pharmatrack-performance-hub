@@ -48,57 +48,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
-    
+
+    const safeSetLoading = (value: boolean) => {
+      if (!mounted) return;
+      setLoading(value);
+    };
+
+    const fetchAndSetProfile = (userId: string) => {
+      // Important: ne pas appeler la DB directement dans onAuthStateChange
+      setTimeout(() => {
+        if (!mounted) return;
+        fetchProfile(userId)
+          .then((profileData) => {
+            if (!mounted) return;
+            setProfile(profileData);
+          })
+          .catch((err) => {
+            console.error('[Auth] Error fetching profile:', err);
+          });
+      }, 0);
+    };
+
     // Timeout de sécurité pour éviter le loading infini
     const timeout = setTimeout(() => {
-      if (mounted && loading) {
+      if (mounted) {
         console.warn('[Auth] Loading timeout - forcing ready state');
-        setLoading(false);
+        safeSetLoading(false);
       }
     }, 8000);
 
-    // Récupérer la session initiale
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // 1) Listener d'abord (évite de rater un event)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-      
+
       setSession(session);
       setUser(session?.user ?? null);
-      
+      safeSetLoading(false);
+
       if (session?.user) {
-        try {
-          const profileData = await fetchProfile(session.user.id);
-          if (mounted) setProfile(profileData);
-        } catch (err) {
-          console.error('[Auth] Error fetching profile:', err);
-        }
+        fetchAndSetProfile(session.user.id);
+      } else {
+        setProfile(null);
       }
-      if (mounted) setLoading(false);
-    }).catch((err) => {
-      console.error('[Auth] Error getting session:', err);
-      if (mounted) setLoading(false);
     });
 
-    // Écouter les changements d'authentification
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    // 2) Puis session initiale
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
         if (!mounted) return;
-        
+
         setSession(session);
         setUser(session?.user ?? null);
+        safeSetLoading(false);
 
         if (session?.user) {
-          try {
-            const profileData = await fetchProfile(session.user.id);
-            if (mounted) setProfile(profileData);
-          } catch (err) {
-            console.error('[Auth] Error fetching profile on change:', err);
-          }
+          fetchAndSetProfile(session.user.id);
         } else {
           setProfile(null);
         }
-        if (mounted) setLoading(false);
-      }
-    );
+      })
+      .catch((err) => {
+        console.error('[Auth] Error getting session:', err);
+        safeSetLoading(false);
+      });
 
     return () => {
       mounted = false;
