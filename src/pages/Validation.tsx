@@ -83,6 +83,7 @@ export default function Validation() {
         .update({
           status: 'approved',
           validated_by: profile?.id,
+          approved_at: new Date().toISOString(),
         })
         .eq('id', eventId);
       if (error) throw error;

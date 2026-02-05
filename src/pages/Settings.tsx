@@ -21,21 +21,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { 
-  Settings as SettingsIcon, 
   User, 
   Briefcase, 
   Plus, 
   Pencil, 
   Trash2,
   Loader2,
-  Save
+  Save,
+  Building2,
+  Users
 } from 'lucide-react';
+import { ReferentialsTab } from '@/components/settings/ReferentialsTab';
+import { AssignmentsTab } from '@/components/settings/AssignmentsTab';
 
 export default function Settings() {
   const { profile, isManager } = useAuth();
@@ -178,16 +180,26 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="profile" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             Mon profil
           </TabsTrigger>
           {isManager && (
-            <TabsTrigger value="positions" className="gap-2">
-              <Briefcase className="h-4 w-4" />
-              Postes
-            </TabsTrigger>
+            <>
+              <TabsTrigger value="positions" className="gap-2">
+                <Briefcase className="h-4 w-4" />
+                Postes
+              </TabsTrigger>
+              <TabsTrigger value="referentials" className="gap-2">
+                <Building2 className="h-4 w-4" />
+                Référentiels
+              </TabsTrigger>
+              <TabsTrigger value="assignments" className="gap-2">
+                <Users className="h-4 w-4" />
+                Affectations
+              </TabsTrigger>
+            </>
           )}
         </TabsList>
 
@@ -330,6 +342,20 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+        )}
+
+        {/* Onglet Référentiels (Manager only) */}
+        {isManager && (
+          <TabsContent value="referentials">
+            <ReferentialsTab />
+          </TabsContent>
+        )}
+
+        {/* Onglet Affectations (Manager only) */}
+        {isManager && (
+          <TabsContent value="assignments">
+            <AssignmentsTab />
           </TabsContent>
         )}
       </Tabs>
