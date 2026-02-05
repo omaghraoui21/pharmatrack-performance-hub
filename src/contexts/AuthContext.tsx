@@ -47,34 +47,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let mounted = true;
+    
+    // Timeout de sécurité pour éviter le loading infini
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn('[Auth] Loading timeout - forcing ready state');
+        setLoading(false);
+      }
+    }, 8000);
+
     // Récupérer la session initiale
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!mounted) return;
+      
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        fetchProfile(session.user.id).then(setProfile);
+        try {
+          const profileData = await fetchProfile(session.user.id);
+          if (mounted) setProfile(profileData);
+        } catch (err) {
+          console.error('[Auth] Error fetching profile:', err);
+        }
       }
-      setLoading(false);
+      if (mounted) setLoading(false);
+    }).catch((err) => {
+      console.error('[Auth] Error getting session:', err);
+      if (mounted) setLoading(false);
     });
 
     // Écouter les changements d'authentification
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return;
+        
         setSession(session);
         setUser(session?.user ?? null);
 
         if (session?.user) {
-          const profileData = await fetchProfile(session.user.id);
-          setProfile(profileData);
+          try {
+            const profileData = await fetchProfile(session.user.id);
+            if (mounted) setProfile(profileData);
+          } catch (err) {
+            console.error('[Auth] Error fetching profile on change:', err);
+          }
         } else {
           setProfile(null);
         }
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
