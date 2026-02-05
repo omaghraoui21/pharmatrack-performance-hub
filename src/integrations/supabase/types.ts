@@ -255,7 +255,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_year_ranking: {
+        Args: { p_year: number }
+        Returns: {
+          approved_events: number
+          full_name: string
+          matricule: string
+          note20: number
+          operator_id: string
+          positions_count: number
+          raw_points: number
+          score100: number
+          unit: string
+          work_days: number
+        }[]
+      }
     }
     Enums: {
       event_category:
