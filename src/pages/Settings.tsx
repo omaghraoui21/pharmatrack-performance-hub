@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { ReferentialsTab } from '@/components/settings/ReferentialsTab';
 import { AssignmentsTab } from '@/components/settings/AssignmentsTab';
+import { UsersTab } from '@/components/settings/UsersTab';
 
 export default function Settings() {
   const { profile, isManager } = useAuth();
@@ -187,6 +188,10 @@ export default function Settings() {
           </TabsTrigger>
           {isManager && (
             <>
+              <TabsTrigger value="users" className="gap-2">
+                <Users className="h-4 w-4" />
+                Utilisateurs
+              </TabsTrigger>
               <TabsTrigger value="positions" className="gap-2">
                 <Briefcase className="h-4 w-4" />
                 Postes
@@ -262,6 +267,13 @@ export default function Settings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Onglet Utilisateurs (Manager only) */}
+        {isManager && (
+          <TabsContent value="users">
+            <UsersTab />
+          </TabsContent>
+        )}
 
         {/* Onglet Postes (Manager only) */}
         {isManager && (
