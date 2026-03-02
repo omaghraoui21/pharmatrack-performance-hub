@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify caller is manager or super_admin
+    // Verify caller auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Non autorisé" }), {
@@ -53,81 +53,75 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { email, full_name, role, app_roles, unit_id, password } = await req.json();
-
-    if (!email || !full_name) {
-      return new Response(
-        JSON.stringify({ error: "Email et nom complet requis" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // Use provided password or generate a random one
-    const userPassword = password && password.length >= 8
-      ? password
-      : crypto.randomUUID().slice(0, 16) + "Aa1!";
-
-    // Use service role to create user
+    const body = await req.json();
+    const { action } = body;
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: newUser, error: createError } =
-      await adminClient.auth.admin.createUser({
-        email,
-        password: userPassword,
-        email_confirm: true,
-        user_metadata: {
-          full_name,
-          role: role || "supervisor",
-        },
-      });
-
-    if (createError) {
-      return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userId = newUser.user.id;
-
-    // Update profile with unit_id if provided
-    if (unit_id) {
-      await adminClient
-        .from("profiles")
-        .update({ unit_id })
-        .eq("id", userId);
-    }
-
-    // Insert app_roles if provided
-    if (app_roles && Array.isArray(app_roles) && app_roles.length > 0) {
-      const roleInserts = app_roles.map((r: string) => ({
-        user_id: userId,
-        role: r,
-      }));
-      const { error: rolesError } = await adminClient
-        .from("user_roles")
-        .insert(roleInserts);
-      if (rolesError) {
-        console.error("Error inserting roles:", rolesError);
+    // ACTION: reset_password
+    if (action === "reset_password") {
+      const { user_id, new_password } = body;
+      if (!user_id || !new_password) {
+        return new Response(
+          JSON.stringify({ error: "user_id et new_password requis" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
-    }
+      if (new_password.length < 8) {
+        return new Response(
+          JSON.stringify({ error: "Le mot de passe doit contenir au moins 8 caractères" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
-    // Fetch the created profile
-    const { data: profile } = await adminClient
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
+      const { error } = await adminClient.auth.admin.updateUserById(user_id, {
+        password: new_password,
+      });
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-    return new Response(
-      JSON.stringify({ user_id: userId, profile }),
-      {
+      return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ACTION: delete_user
+    if (action === "delete_user") {
+      const { user_id } = body;
+      if (!user_id) {
+        return new Response(
+          JSON.stringify({ error: "user_id requis" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
+      if (user_id === caller.id) {
+        return new Response(
+          JSON.stringify({ error: "Vous ne pouvez pas supprimer votre propre compte" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const { error } = await adminClient.auth.admin.deleteUser(user_id);
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({ error: "Action non reconnue" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Error:", error);

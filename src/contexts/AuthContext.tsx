@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 type UserRole = 'supervisor' | 'manager';
 type AppRole = 'super_admin' | 'admin_site' | 'manager_unite' | 'superviseur' | 'readonly';
@@ -21,7 +22,6 @@ interface AuthContextType {
   appRoles: AppRole[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string, role: UserRole) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   isManager: boolean;
   isSupervisor: boolean;
@@ -37,6 +37,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [appRoles, setAppRoles] = useState<AppRole[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const performSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setAppRoles([]);
+  };
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -81,7 +89,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const fetchAndSetProfile = (userId: string) => {
-      // Important: ne pas appeler la DB directement dans onAuthStateChange
       setTimeout(() => {
         if (!mounted) return;
         
@@ -91,6 +98,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ])
           .then(([profileData, roles]) => {
             if (!mounted) return;
+
+            // Block inactive accounts
+            if (profileData && profileData.is_active === false) {
+              toast.error('Votre compte est désactivé. Contactez votre administrateur.');
+              performSignOut();
+              return;
+            }
+
             setProfile(profileData);
             setAppRoles(roles);
           })
@@ -100,7 +115,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, 0);
     };
 
-    // Timeout de sécurité pour éviter le loading infini
     const timeout = setTimeout(() => {
       if (mounted) {
         console.warn('[Auth] Loading timeout - forcing ready state');
@@ -108,7 +122,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }, 8000);
 
-    // 1) Listener d'abord (évite de rater un event)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -126,7 +139,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // 2) Puis session initiale
     supabase.auth
       .getSession()
       .then(({ data: { session } }) => {
@@ -163,35 +175,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   };
 
-  const signUp = async (email: string, password: string, fullName: string, role: UserRole) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-          role: role,
-        },
-      },
-    });
-    return { error };
-  };
+  const signOut = performSignOut;
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    setAppRoles([]);
-  };
-
-  // Legacy role checks (based on profiles.role)
   const isManager = profile?.role === 'manager';
   const isSupervisor = profile?.role === 'supervisor';
-  
-  // New role checks (based on user_roles table)
   const isSuperAdmin = appRoles.includes('super_admin');
-  
   const hasRole = (role: AppRole) => appRoles.includes(role);
 
   return (
@@ -203,7 +191,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         appRoles,
         loading,
         signIn,
-        signUp,
         signOut,
         isManager,
         isSupervisor,

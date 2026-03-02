@@ -7,13 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { Plus, Pencil, Shield, Loader2, Users, UserPlus } from 'lucide-react';
+import { Plus, Pencil, Shield, Loader2, Users, UserPlus, KeyRound, Trash2 } from 'lucide-react';
 import type { Database } from '@/integrations/supabase/types';
 
 type AppRole = Database['public']['Enums']['app_role'];
@@ -46,6 +47,8 @@ export function UsersTab() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showRolesDialog, setShowRolesDialog] = useState(false);
+  const [showResetPwDialog, setShowResetPwDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<ProfileWithRoles | null>(null);
 
   // Invite form
@@ -54,6 +57,7 @@ export function UsersTab() {
   const [inviteRole, setInviteRole] = useState<UserRole>('supervisor');
   const [inviteUnitId, setInviteUnitId] = useState<string>('none');
   const [inviteAppRoles, setInviteAppRoles] = useState<AppRole[]>([]);
+  const [invitePassword, setInvitePassword] = useState('');
 
   // Edit form
   const [editFullName, setEditFullName] = useState('');
@@ -62,6 +66,9 @@ export function UsersTab() {
 
   // Roles form
   const [editRoles, setEditRoles] = useState<AppRole[]>([]);
+
+  // Reset password form
+  const [newPassword, setNewPassword] = useState('');
 
   // Fetch units
   const { data: units } = useQuery({
@@ -107,6 +114,7 @@ export function UsersTab() {
       role: UserRole;
       app_roles: AppRole[];
       unit_id: string | null;
+      password?: string;
     }) => {
       const { data: result, error } = await supabase.functions.invoke('invite-user', {
         body: data,
@@ -151,14 +159,12 @@ export function UsersTab() {
   // Update roles mutation
   const updateRolesMutation = useMutation({
     mutationFn: async (data: { userId: string; newRoles: AppRole[] }) => {
-      // Delete existing roles
       const { error: deleteError } = await supabase
         .from('user_roles')
         .delete()
         .eq('user_id', data.userId);
       if (deleteError) throw deleteError;
 
-      // Insert new roles
       if (data.newRoles.length > 0) {
         const { error: insertError } = await supabase
           .from('user_roles')
@@ -191,6 +197,46 @@ export function UsersTab() {
     },
   });
 
+  // Reset password mutation
+  const resetPasswordMutation = useMutation({
+    mutationFn: async ({ user_id, new_password }: { user_id: string; new_password: string }) => {
+      const { data: result, error } = await supabase.functions.invoke('manage-user', {
+        body: { action: 'reset_password', user_id, new_password },
+      });
+      if (error) throw error;
+      if (result?.error) throw new Error(result.error);
+      return result;
+    },
+    onSuccess: () => {
+      toast.success('Mot de passe réinitialisé');
+      setShowResetPwDialog(false);
+      setNewPassword('');
+    },
+    onError: (error: any) => {
+      toast.error('Erreur', { description: error.message });
+    },
+  });
+
+  // Delete user mutation
+  const deleteUserMutation = useMutation({
+    mutationFn: async (user_id: string) => {
+      const { data: result, error } = await supabase.functions.invoke('manage-user', {
+        body: { action: 'delete_user', user_id },
+      });
+      if (error) throw error;
+      if (result?.error) throw new Error(result.error);
+      return result;
+    },
+    onSuccess: () => {
+      toast.success('Utilisateur supprimé');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      setShowDeleteDialog(false);
+    },
+    onError: (error: any) => {
+      toast.error('Erreur', { description: error.message });
+    },
+  });
+
   const resetInviteDialog = () => {
     setShowInviteDialog(false);
     setInviteEmail('');
@@ -198,11 +244,16 @@ export function UsersTab() {
     setInviteRole('supervisor');
     setInviteUnitId('none');
     setInviteAppRoles([]);
+    setInvitePassword('');
   };
 
   const handleInvite = () => {
     if (!inviteEmail.trim() || !inviteFullName.trim()) {
       toast.error('Email et nom complet requis');
+      return;
+    }
+    if (invitePassword && invitePassword.length < 8) {
+      toast.error('Le mot de passe doit contenir au moins 8 caractères');
       return;
     }
     inviteMutation.mutate({
@@ -211,6 +262,7 @@ export function UsersTab() {
       role: inviteRole,
       app_roles: inviteAppRoles,
       unit_id: inviteUnitId === 'none' ? null : inviteUnitId,
+      password: invitePassword || undefined,
     });
   };
 
@@ -226,6 +278,17 @@ export function UsersTab() {
     setSelectedUser(user);
     setEditRoles([...user.roles]);
     setShowRolesDialog(true);
+  };
+
+  const openResetPwDialog = (user: ProfileWithRoles) => {
+    setSelectedUser(user);
+    setNewPassword('');
+    setShowResetPwDialog(true);
+  };
+
+  const openDeleteDialog = (user: ProfileWithRoles) => {
+    setSelectedUser(user);
+    setShowDeleteDialog(true);
   };
 
   const toggleAppRole = (role: AppRole, checked: boolean) => {
@@ -324,12 +387,25 @@ export function UsersTab() {
                         />
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openEditDialog(user)}>
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="outline" onClick={() => openEditDialog(user)} title="Modifier">
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => openRolesDialog(user)}>
+                          <Button size="sm" variant="outline" onClick={() => openRolesDialog(user)} title="Rôles">
                             <Shield className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => openResetPwDialog(user)} title="Réinitialiser MDP">
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openDeleteDialog(user)}
+                            title="Supprimer"
+                            disabled={user.id === currentProfile?.id}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -348,7 +424,7 @@ export function UsersTab() {
           <DialogHeader>
             <DialogTitle>Inviter un utilisateur</DialogTitle>
             <DialogDescription>
-              Créez un nouveau compte utilisateur avec un mot de passe temporaire
+              Créez un nouveau compte utilisateur
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -369,6 +445,17 @@ export function UsersTab() {
                 value={inviteFullName}
                 onChange={(e) => setInviteFullName(e.target.value)}
                 placeholder="Nom Prénom"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite_password">Mot de passe initial</Label>
+              <Input
+                id="invite_password"
+                type="password"
+                value={invitePassword}
+                onChange={(e) => setInvitePassword(e.target.value)}
+                placeholder="Min. 8 caractères (auto-généré si vide)"
+                minLength={8}
               />
             </div>
             <div className="space-y-2">
@@ -526,6 +613,73 @@ export function UsersTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={showResetPwDialog} onOpenChange={setShowResetPwDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Réinitialiser le mot de passe</DialogTitle>
+            <DialogDescription>{selectedUser?.full_name} ({selectedUser?.email})</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new_password">Nouveau mot de passe</Label>
+              <Input
+                id="new_password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Min. 8 caractères"
+                minLength={8}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetPwDialog(false)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={() => {
+                if (!selectedUser || !newPassword || newPassword.length < 8) {
+                  toast.error('Le mot de passe doit contenir au moins 8 caractères');
+                  return;
+                }
+                resetPasswordMutation.mutate({ user_id: selectedUser.id, new_password: newPassword });
+              }}
+              disabled={resetPasswordMutation.isPending}
+            >
+              {resetPasswordMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Réinitialiser
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer l'utilisateur</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer <strong>{selectedUser?.full_name}</strong> ({selectedUser?.email}) ?
+              Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!selectedUser) return;
+                deleteUserMutation.mutate(selectedUser.id);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteUserMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
