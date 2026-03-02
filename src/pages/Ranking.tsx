@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useHierarchyScope } from '@/hooks/useHierarchyScope';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -49,6 +50,7 @@ interface Unit {
 }
 
 export default function Ranking() {
+  const { isFullAccess, canSeeOperator } = useHierarchyScope();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear.toString());
   const [selectedUnit, setSelectedUnit] = useState<string>('all');
@@ -95,7 +97,8 @@ export default function Ranking() {
   const filteredRanking = ranking?.filter((entry) => {
     const matchesUnit = selectedUnit === 'all' || entry.unit === selectedUnit;
     const meetsWorkDays = !hideUnder60Days || entry.work_days >= 60;
-    return matchesUnit && meetsWorkDays;
+    const isVisible = isFullAccess || canSeeOperator(entry.operator_id);
+    return matchesUnit && meetsWorkDays && isVisible;
   });
 
   const handleExport = () => {
