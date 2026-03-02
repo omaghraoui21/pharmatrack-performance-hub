@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHierarchyScope } from '@/hooks/useHierarchyScope';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -45,6 +46,7 @@ interface Operator {
 
 export default function Operators() {
   const { hasRole, appRoles } = useAuth();
+  const { isFullAccess, canSeeOperator } = useHierarchyScope();
   const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -89,7 +91,7 @@ export default function Operators() {
 
   // Récupérer les opérateurs
   const { data: operators, isLoading } = useQuery({
-    queryKey: ['operators'],
+    queryKey: ['operators', isFullAccess],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operators')
@@ -97,7 +99,11 @@ export default function Operators() {
         .order('full_name');
 
       if (error) throw error;
-      return data as Operator[];
+      const all = data as Operator[];
+      if (!isFullAccess) {
+        return all.filter(op => canSeeOperator(op.id));
+      }
+      return all;
     },
   });
 

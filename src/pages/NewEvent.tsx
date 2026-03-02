@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHierarchyScope } from '@/hooks/useHierarchyScope';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -37,6 +38,7 @@ import { format } from 'date-fns';
 export default function NewEvent() {
   const navigate = useNavigate();
   const { profile } = useAuth();
+  const { isFullAccess, canSeeOperator } = useHierarchyScope();
   
   const [operatorOpen, setOperatorOpen] = useState(false);
   const [selectedOperator, setSelectedOperator] = useState<string>('');
@@ -54,7 +56,7 @@ export default function NewEvent() {
 
   // Récupérer les opérateurs
   const { data: operators } = useQuery({
-    queryKey: ['operators-active'],
+    queryKey: ['operators-active', isFullAccess],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operators')
@@ -63,6 +65,10 @@ export default function NewEvent() {
         .order('full_name');
 
       if (error) throw error;
+      // Filter by hierarchy scope on the client side
+      if (!isFullAccess && data) {
+        return data.filter(op => canSeeOperator(op.id));
+      }
       return data;
     },
   });

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHierarchyScope } from '@/hooks/useHierarchyScope';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -42,6 +43,7 @@ interface OperatorImportRow {
 
 export default function Import() {
   const { profile } = useAuth();
+  const { isFullAccess, canSeeOperator } = useHierarchyScope();
   const queryClient = useQueryClient();
   
   const [file, setFile] = useState<File | null>(null);
@@ -52,12 +54,15 @@ export default function Import() {
 
   // Récupérer les opérateurs pour la validation
   const { data: operators } = useQuery({
-    queryKey: ['operators'],
+    queryKey: ['operators', isFullAccess],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operators')
         .select('id, matricule, full_name');
       if (error) throw error;
+      if (!isFullAccess && data) {
+        return data.filter(op => canSeeOperator(op.id));
+      }
       return data;
     },
   });
