@@ -3,14 +3,16 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
+type AppRole = 'super_admin' | 'admin_site' | 'manager_unite' | 'superviseur' | 'readonly';
+
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requireManager?: boolean;
+  requiredRoles?: AppRole[];
 }
 
 export const ProtectedRoute = React.forwardRef<HTMLDivElement, ProtectedRouteProps>(
-  function ProtectedRoute({ children, requireManager = false }, ref) {
-    const { user, profile, loading, isManager } = useAuth();
+  function ProtectedRoute({ children, requiredRoles }, ref) {
+    const { user, loading, appRoles } = useAuth();
     const location = useLocation();
 
     if (loading) {
@@ -28,8 +30,11 @@ export const ProtectedRoute = React.forwardRef<HTMLDivElement, ProtectedRoutePro
       return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    if (requireManager && !isManager) {
-      return <Navigate to="/dashboard" replace />;
+    if (requiredRoles && requiredRoles.length > 0) {
+      const hasRequiredRole = appRoles.some((role) => requiredRoles.includes(role));
+      if (!hasRequiredRole) {
+        return <Navigate to="/dashboard" replace />;
+      }
     }
 
     return <div ref={ref}>{children}</div>;

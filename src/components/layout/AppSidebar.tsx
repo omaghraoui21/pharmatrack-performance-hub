@@ -37,70 +37,75 @@ import {
   Users2,
 } from 'lucide-react';
 
+type AppRole = 'super_admin' | 'admin_site' | 'manager_unite' | 'superviseur' | 'readonly';
+
+const MANAGER_ROLES: AppRole[] = ['manager_unite', 'admin_site', 'super_admin'];
+const ALL_ACTIVE_ROLES: AppRole[] = ['superviseur', ...MANAGER_ROLES];
+const ALL_ROLES: AppRole[] = ['readonly', ...ALL_ACTIVE_ROLES];
+
 const navigationItems = [
   {
     title: 'Tableau de bord',
     url: '/dashboard',
     icon: LayoutDashboard,
-    roles: ['supervisor', 'manager'],
+    allowedRoles: ALL_ROLES,
   },
   {
     title: 'Opérateurs',
     url: '/operators',
     icon: Users,
-    roles: ['supervisor', 'manager'],
+    allowedRoles: ALL_ROLES,
   },
   {
     title: 'Saisir un événement',
     url: '/events/new',
     icon: FileText,
-    roles: ['supervisor', 'manager'],
+    allowedRoles: ALL_ACTIVE_ROLES,
   },
   {
     title: 'File de validation',
     url: '/validation',
     icon: CheckSquare,
-    roles: ['manager'],
+    allowedRoles: MANAGER_ROLES,
   },
   {
     title: 'Import CSV/Excel',
     url: '/import',
     icon: Upload,
-    roles: ['manager'],
+    allowedRoles: MANAGER_ROLES,
   },
   {
     title: 'Grille de scoring',
     url: '/scoring',
     icon: ListChecks,
-    roles: ['manager'],
+    allowedRoles: MANAGER_ROLES,
   },
   {
     title: 'Classement annuel',
     url: '/ranking',
     icon: Trophy,
-    roles: ['supervisor', 'manager'],
+    allowedRoles: ALL_ROLES,
   },
   {
     title: 'Objectifs',
     url: '/objectives',
     icon: Target,
-    roles: ['supervisor', 'manager'],
+    allowedRoles: ALL_ROLES,
   },
   {
     title: 'Classement hiérarchique',
     url: '/hierarchy-ranking',
     icon: Users2,
-    roles: ['manager'],
+    allowedRoles: MANAGER_ROLES,
   },
 ];
 
 export function AppSidebar() {
   const location = useLocation();
-  const { profile, signOut, isManager } = useAuth();
+  const { profile, appRoles, signOut } = useAuth();
 
-  const userRole = profile?.role || 'supervisor';
   const filteredNavItems = navigationItems.filter((item) =>
-    item.roles.includes(userRole)
+    appRoles.some((role) => item.allowedRoles.includes(role))
   );
 
   const getInitials = (name: string) => {
@@ -110,6 +115,15 @@ export function AppSidebar() {
       .join('')
       .toUpperCase()
       .slice(0, 2);
+  };
+
+  const displayRole = () => {
+    if (appRoles.includes('super_admin')) return 'Super Admin';
+    if (appRoles.includes('admin_site')) return 'Admin Site';
+    if (appRoles.includes('manager_unite')) return 'Manager Unité';
+    if (appRoles.includes('superviseur')) return 'Superviseur';
+    if (appRoles.includes('readonly')) return 'Lecture seule';
+    return profile?.role === 'manager' ? 'Manager' : 'Superviseur';
   };
 
   return (
@@ -164,8 +178,8 @@ export function AppSidebar() {
                     <p className="text-sm font-medium truncate">
                       {profile?.full_name || 'Utilisateur'}
                     </p>
-                    <p className="text-xs text-sidebar-foreground/70 capitalize">
-                      {profile?.role === 'manager' ? 'Manager' : 'Superviseur'}
+                    <p className="text-xs text-sidebar-foreground/70">
+                      {displayRole()}
                     </p>
                   </div>
                   <ChevronUp className="h-4 w-4" />

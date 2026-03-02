@@ -21,7 +21,15 @@ import Objectives from "@/pages/Objectives";
 import HierarchyRanking from "@/pages/HierarchyRanking";
 import NotFound from "@/pages/NotFound";
 
-const queryClient = new QueryClient();
+const MANAGER_ROLES = ['manager_unite', 'admin_site', 'super_admin'] as const;
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -31,17 +39,13 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* Page de connexion */}
             <Route path="/login" element={<Login />} />
 
-            {/* Routes protégées avec layout */}
             <Route
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <AppLayout>
-                    <Dashboard />
-                  </AppLayout>
+                  <AppLayout><Dashboard /></AppLayout>
                 </ProtectedRoute>
               }
             />
@@ -49,49 +53,39 @@ const App = () => (
               path="/operators"
               element={
                 <ProtectedRoute>
-                  <AppLayout>
-                    <Operators />
-                  </AppLayout>
+                  <AppLayout><Operators /></AppLayout>
                 </ProtectedRoute>
               }
             />
             <Route
               path="/events/new"
               element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <NewEvent />
-                  </AppLayout>
+                <ProtectedRoute requiredRoles={['superviseur', ...MANAGER_ROLES]}>
+                  <AppLayout><NewEvent /></AppLayout>
                 </ProtectedRoute>
               }
             />
             <Route
               path="/validation"
               element={
-                <ProtectedRoute requireManager>
-                  <AppLayout>
-                    <Validation />
-                  </AppLayout>
+                <ProtectedRoute requiredRoles={[...MANAGER_ROLES]}>
+                  <AppLayout><Validation /></AppLayout>
                 </ProtectedRoute>
               }
             />
             <Route
               path="/import"
               element={
-                <ProtectedRoute requireManager>
-                  <AppLayout>
-                    <Import />
-                  </AppLayout>
+                <ProtectedRoute requiredRoles={[...MANAGER_ROLES]}>
+                  <AppLayout><Import /></AppLayout>
                 </ProtectedRoute>
               }
             />
             <Route
               path="/scoring"
               element={
-                <ProtectedRoute requireManager>
-                  <AppLayout>
-                    <Scoring />
-                  </AppLayout>
+                <ProtectedRoute requiredRoles={[...MANAGER_ROLES]}>
+                  <AppLayout><Scoring /></AppLayout>
                 </ProtectedRoute>
               }
             />
@@ -99,9 +93,7 @@ const App = () => (
               path="/ranking"
               element={
                 <ProtectedRoute>
-                  <AppLayout>
-                    <Ranking />
-                  </AppLayout>
+                  <AppLayout><Ranking /></AppLayout>
                 </ProtectedRoute>
               }
             />
@@ -109,9 +101,7 @@ const App = () => (
               path="/settings"
               element={
                 <ProtectedRoute>
-                  <AppLayout>
-                    <Settings />
-                  </AppLayout>
+                  <AppLayout><Settings /></AppLayout>
                 </ProtectedRoute>
               }
             />
@@ -119,27 +109,20 @@ const App = () => (
               path="/objectives"
               element={
                 <ProtectedRoute>
-                  <AppLayout>
-                    <Objectives />
-                  </AppLayout>
+                  <AppLayout><Objectives /></AppLayout>
                 </ProtectedRoute>
               }
             />
             <Route
               path="/hierarchy-ranking"
               element={
-                <ProtectedRoute requireManager>
-                  <AppLayout>
-                    <HierarchyRanking />
-                  </AppLayout>
+                <ProtectedRoute requiredRoles={[...MANAGER_ROLES]}>
+                  <AppLayout><HierarchyRanking /></AppLayout>
                 </ProtectedRoute>
               }
             />
 
-            {/* Redirection par défaut */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-            {/* Page 404 */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

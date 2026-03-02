@@ -37,7 +37,8 @@ interface Operator {
 }
 
 export default function Operators() {
-  const { isManager } = useAuth();
+  const { hasRole, appRoles } = useAuth();
+  const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -158,7 +159,7 @@ export default function Operators() {
           </p>
         </div>
 
-        {isManager && (
+        {canManage && (
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>
@@ -269,7 +270,7 @@ export default function Operators() {
                     <TableHead>Nom complet</TableHead>
                     <TableHead>Unité</TableHead>
                     <TableHead>Statut</TableHead>
-                    {isManager && <TableHead className="w-[100px]">Actions</TableHead>}
+                    {canManage && <TableHead className="w-[100px]">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -292,7 +293,7 @@ export default function Operators() {
                           {operator.is_active ? 'Actif' : 'Inactif'}
                         </Badge>
                       </TableCell>
-                      {isManager && (
+                      {canManage && (
                         <TableCell>
                           <Button
                             variant="ghost"

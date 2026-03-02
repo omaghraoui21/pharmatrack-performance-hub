@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { Link } from 'react-router-dom';
 import { 
   ClipboardList, 
   CheckCircle2, 
@@ -19,7 +20,10 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard() {
-  const { profile, isManager } = useAuth();
+  const { profile, hasRole, appRoles } = useAuth();
+
+  const isReadonly = appRoles.length === 1 && appRoles[0] === 'readonly';
+  const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
 
   // Récupérer les statistiques
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useQuery({
@@ -33,10 +37,7 @@ export default function Dashboard() {
       ]);
 
       const firstError = pendingRes.error || approvedRes.error || rejectedRes.error || operatorsRes.error;
-      if (firstError) {
-        console.error('[Dashboard] stats error:', firstError);
-        throw new Error(firstError.message);
-      }
+      if (firstError) throw new Error(firstError.message);
 
       return {
         pending: pendingRes.count ?? 0,
@@ -46,7 +47,6 @@ export default function Dashboard() {
       };
     },
     retry: 1,
-    staleTime: 30000,
   });
 
   // Récupérer les derniers événements
@@ -65,14 +65,10 @@ export default function Dashboard() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (error) {
-        console.error('[Dashboard] events error:', error);
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
       return data || [];
     },
     retry: 1,
-    staleTime: 30000,
   });
 
   const isLoading = statsLoading || eventsLoading;
@@ -133,7 +129,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* En-tête */}
       <div>
         <h1 className="text-3xl font-bold text-foreground">
           Bonjour, {profile?.full_name?.split(' ')[0] || 'Utilisateur'}
@@ -143,7 +138,6 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* Error state */}
       {hasError && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
@@ -158,17 +152,14 @@ export default function Dashboard() {
         </Alert>
       )}
 
-      {/* Loading state */}
       {isLoading && !hasError && (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
-      {/* Content */}
       {!isLoading && !hasError && (
         <>
-          {/* Cartes statistiques */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {statCards.map((stat) => (
               <Card key={stat.title} className="pharma-stat-card">
@@ -188,9 +179,7 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* Section principale */}
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Derniers événements */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -238,7 +227,6 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* Actions rapides */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -249,24 +237,26 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-3">
-                  <a
-                    href="/events/new"
-                    className="flex items-center gap-3 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <ClipboardList className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">Saisir un événement</p>
-                      <p className="text-sm text-muted-foreground">
-                        Enregistrer un nouvel événement opérateur
-                      </p>
-                    </div>
-                  </a>
+                  {!isReadonly && (
+                    <Link
+                      to="/events/new"
+                      className="flex items-center gap-3 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <ClipboardList className="h-5 w-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">Saisir un événement</p>
+                        <p className="text-sm text-muted-foreground">
+                          Enregistrer un nouvel événement opérateur
+                        </p>
+                      </div>
+                    </Link>
+                  )}
 
-                  {isManager && (
-                    <a
-                      href="/validation"
+                  {canManage && (
+                    <Link
+                      to="/validation"
                       className="flex items-center gap-3 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
                     >
                       <div className="p-2 rounded-lg bg-warning/10">
@@ -278,11 +268,11 @@ export default function Dashboard() {
                           {stats?.pending || 0} événements en attente
                         </p>
                       </div>
-                    </a>
+                    </Link>
                   )}
 
-                  <a
-                    href="/ranking"
+                  <Link
+                    to="/ranking"
                     className="flex items-center gap-3 p-4 rounded-lg border hover:bg-muted/50 transition-colors"
                   >
                     <div className="p-2 rounded-lg bg-secondary/10">
@@ -294,7 +284,7 @@ export default function Dashboard() {
                         Classement annuel des opérateurs
                       </p>
                     </div>
-                  </a>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
