@@ -138,41 +138,73 @@ export default function Import() {
       const weekendType = eventTypes?.find((et) => et.code === 'WEEKEND_TRAVAILLE');
 
       const events: any[] = [];
+      const now = new Date().toISOString();
+
+      // Helper: get Saturdays of a given month (YYYY-MM)
+      const getSaturdays = (mois: string): string[] => {
+        const [year, month] = mois.split('-').map(Number);
+        const saturdays: string[] = [];
+        const date = new Date(year, month - 1, 1);
+        while (date.getMonth() === month - 1) {
+          if (date.getDay() === 6) {
+            saturdays.push(`${mois}-${String(date.getDate()).padStart(2, '0')}`);
+          }
+          date.setDate(date.getDate() + 1);
+        }
+        return saturdays;
+      };
+
+      // Helper: get last day of month
+      const getLastDay = (mois: string): number => {
+        const [year, month] = mois.split('-').map(Number);
+        return new Date(year, month, 0).getDate();
+      };
 
       for (const row of parsedData) {
         if (!row.operatorId) continue;
+        const lastDay = getLastDay(row.mois);
 
+        // Retards: days 1, 2, 3... (capped to month length)
         for (let i = 0; i < row.retards; i++) {
+          const day = Math.min(i + 1, lastDay);
           events.push({
             operator_id: row.operatorId,
             event_type_id: retardType?.id,
             created_by: profile.id,
-            event_date: `${row.mois}-01`,
+            event_date: `${row.mois}-${String(day).padStart(2, '0')}`,
             status: 'approved',
+            approved_at: now,
             source: 'import',
             validated_by: profile.id,
           });
         }
 
+        // Heures sup: days 10, 11, 12... (capped to month length)
         for (let i = 0; i < row.heures_sup; i++) {
+          const day = Math.min(10 + i, lastDay);
           events.push({
             operator_id: row.operatorId,
             event_type_id: heuresSupType?.id,
             created_by: profile.id,
-            event_date: `${row.mois}-01`,
+            event_date: `${row.mois}-${String(day).padStart(2, '0')}`,
             status: 'approved',
+            approved_at: now,
             source: 'import',
             validated_by: profile.id,
           });
         }
 
+        // Weekends: on Saturdays of the month
+        const saturdays = getSaturdays(row.mois);
         for (let i = 0; i < row.weekends; i++) {
+          const eventDate = saturdays[i % saturdays.length] || `${row.mois}-${String(Math.min(20 + i, lastDay)).padStart(2, '0')}`;
           events.push({
             operator_id: row.operatorId,
             event_type_id: weekendType?.id,
             created_by: profile.id,
-            event_date: `${row.mois}-01`,
+            event_date: eventDate,
             status: 'approved',
+            approved_at: now,
             source: 'import',
             validated_by: profile.id,
           });
