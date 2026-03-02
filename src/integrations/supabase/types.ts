@@ -169,6 +169,48 @@ export type Database = {
           },
         ]
       }
+      hierarchy_links: {
+        Row: {
+          child_id: string
+          created_at: string | null
+          end_date: string | null
+          id: string
+          parent_id: string
+          start_date: string
+        }
+        Insert: {
+          child_id: string
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          parent_id: string
+          start_date?: string
+        }
+        Update: {
+          child_id?: string
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          parent_id?: string
+          start_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hierarchy_links_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hierarchy_links_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lines: {
         Row: {
           code: string
@@ -508,6 +550,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_descendants: { Args: { _profile_id: string }; Returns: string[] }
       get_manager_ranking: {
         Args: { p_year: number }
         Returns: {
@@ -536,6 +579,10 @@ export type Database = {
           supervisor_score: number
           unit_name: string
         }[]
+      }
+      get_visible_operator_ids: {
+        Args: { _profile_id: string }
+        Returns: string[]
       }
       get_year_ranking: {
         Args: { p_unit_id?: string; p_year: number }

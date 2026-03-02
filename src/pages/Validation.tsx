@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHierarchyScope } from '@/hooks/useHierarchyScope';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -46,6 +47,7 @@ import { fr } from 'date-fns/locale';
 
 export default function Validation() {
   const { profile } = useAuth();
+  const { isFullAccess, visibleOperatorIds } = useHierarchyScope();
   const queryClient = useQueryClient();
   
   const [search, setSearch] = useState('');
@@ -56,7 +58,7 @@ export default function Validation() {
 
   // Récupérer les événements en attente
   const { data: events, isLoading } = useQuery({
-    queryKey: ['pending-events', categoryFilter],
+    queryKey: ['pending-events', categoryFilter, isFullAccess, Array.from(visibleOperatorIds)],
     queryFn: async () => {
       let query = supabase
         .from('events')
@@ -68,6 +70,10 @@ export default function Validation() {
         `)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
+
+      if (!isFullAccess && visibleOperatorIds.size > 0) {
+        query = query.in('operator_id', Array.from(visibleOperatorIds));
+      }
 
       const { data, error } = await query;
       if (error) throw error;

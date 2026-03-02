@@ -1,4 +1,5 @@
 import { useAuth } from '@/contexts/AuthContext';
+import { useHierarchyScope } from '@/hooks/useHierarchyScope';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,19 +22,34 @@ import {
 
 export default function Dashboard() {
   const { profile, hasRole, appRoles } = useAuth();
+  const { isFullAccess, visibleOperatorIds } = useHierarchyScope();
 
   const isReadonly = appRoles.length === 1 && appRoles[0] === 'readonly';
   const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
 
   // Récupérer les statistiques
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useQuery({
-    queryKey: ['dashboard-stats'],
+    queryKey: ['dashboard-stats', isFullAccess, Array.from(visibleOperatorIds)],
     queryFn: async () => {
+      // If scoped, filter events by visible operators
+      const buildEventQuery = (status: 'pending' | 'approved' | 'rejected') => {
+        let q = supabase.from('events').select('id', { count: 'exact', head: true }).eq('status', status);
+        if (!isFullAccess && visibleOperatorIds.size > 0) {
+          q = q.in('operator_id', Array.from(visibleOperatorIds));
+        }
+        return q;
+      };
+
+      let operatorsQuery = supabase.from('operators').select('id', { count: 'exact', head: true }).eq('is_active', true);
+      if (!isFullAccess && visibleOperatorIds.size > 0) {
+        operatorsQuery = operatorsQuery.in('id', Array.from(visibleOperatorIds));
+      }
+
       const [pendingRes, approvedRes, rejectedRes, operatorsRes] = await Promise.all([
-        supabase.from('events').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('events').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
-        supabase.from('events').select('id', { count: 'exact', head: true }).eq('status', 'rejected'),
-        supabase.from('operators').select('id', { count: 'exact', head: true }).eq('is_active', true),
+        buildEventQuery('pending'),
+        buildEventQuery('approved'),
+        buildEventQuery('rejected'),
+        operatorsQuery,
       ]);
 
       const firstError = pendingRes.error || approvedRes.error || rejectedRes.error || operatorsRes.error;
@@ -51,20 +67,26 @@ export default function Dashboard() {
 
   // Récupérer les derniers événements
   const { data: recentEvents, isLoading: eventsLoading, isError: eventsError, refetch: refetchEvents } = useQuery({
-    queryKey: ['recent-events'],
+    queryKey: ['recent-events', isFullAccess, Array.from(visibleOperatorIds)],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('events')
         .select(`
           id,
           event_date,
           status,
+          operator_id,
           operator:operators(full_name),
           event_type:event_types(label, points)
         `)
         .order('created_at', { ascending: false })
         .limit(5);
 
+      if (!isFullAccess && visibleOperatorIds.size > 0) {
+        query = query.in('operator_id', Array.from(visibleOperatorIds));
+      }
+
+      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data || [];
     },
