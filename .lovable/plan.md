@@ -1,115 +1,176 @@
 
 
-# Plan: Gestion des Utilisateurs et Acces
+# Plan: Production-Ready Freeze -- Application Maison
 
 ## Contexte
 
-Actuellement, il n'existe aucune interface pour gerer les utilisateurs. Les profils sont crees automatiquement a l'inscription mais personne ne peut :
-- Voir la liste des utilisateurs
-- Modifier le role, l'unite ou le statut actif d'un utilisateur
-- Inviter de nouveaux utilisateurs
-- Attribuer/retirer des roles d'acces (super_admin, admin_site, manager_unite, superviseur, readonly)
+Application interne (maison) : pas d'inscription publique, pas de "mot de passe oublie". L'admin gere tout : creation/suppression de comptes, attribution des roles et mots de passe. Les utilisateurs recoivent leurs identifiants directement de l'admin.
 
-## Ce qui sera livre
+---
 
-### 1. Edge Function pour inviter des utilisateurs
+## Phase 1 : Securite (P0 -- Critique)
 
-Creer `supabase/functions/invite-user/index.ts` :
-- Recoit email, full_name, role (legacy), app_roles[], unit_id
-- Utilise le service role key pour appeler `supabase.auth.admin.createUser()`
-- Cree automatiquement le profil (via trigger existant)
-- Insere les app_roles dans `user_roles`
-- Securise : verifie que l'appelant est manager ou super_admin
+### 1.1 Supprimer l'inscription publique
 
-### 2. Migrations SQL
+**Fichier**: `src/pages/Login.tsx`
+- Supprimer l'onglet Tabs (Connexion/Inscription) et tout le formulaire d'inscription
+- Garder uniquement le formulaire de connexion (email + mot de passe)
+- Supprimer `signUp` de l'import `useAuth`
+- Supprimer tout le state signup (signupEmail, signupPassword, signupName, signupRole)
+- Mettre a jour le copyright : `2024` vers `new Date().getFullYear()`
 
-**Mettre a jour les RLS sur `profiles`** :
-- Permettre aux managers de modifier les profils des autres utilisateurs (unit_id, is_active, full_name)
+**Fichier**: `src/contexts/AuthContext.tsx`
+- Supprimer la methode `signUp` du contexte et de l'interface `AuthContextType`
+- Garder `signIn` et `signOut` uniquement
 
-**Mettre a jour les RLS sur `user_roles`** :
-- Permettre aux managers (is_manager_or_above) de gerer les roles, pas seulement super_admin
+### 1.2 Bloquer les comptes desactives
 
-### 3. Nouvel onglet "Utilisateurs" dans Settings
+**Fichier**: `src/contexts/AuthContext.tsx`
+- Apres le fetch du profil, verifier `is_active === false`
+- Si inactif : appeler `signOut()` et afficher un toast "Votre compte est desactive"
+- Empecher toute navigation
 
-Ajouter un onglet visible uniquement pour les managers, contenant :
+### 1.3 Admin peut definir le mot de passe a l'invitation
 
-**Tableau des utilisateurs** :
-- Colonnes : Nom, Email, Role legacy, Roles d'acces, Unite, Actif, Actions
-- Badge colore par role
+**Fichier**: `supabase/functions/invite-user/index.ts`
+- Accepter un champ optionnel `password` dans le body
+- Si fourni, utiliser ce mot de passe au lieu du UUID aleatoire
+- L'admin communique le mot de passe a l'utilisateur en personne (application maison)
 
-**Bouton "Inviter un utilisateur"** :
-- Dialog avec : email, nom complet, role (supervisor/manager), roles d'acces (multi-select), unite
-- Appelle l'edge function invite-user
+**Fichier**: `src/components/settings/UsersTab.tsx`
+- Ajouter un champ "Mot de passe initial" dans le dialog d'invitation
+- Validation : minimum 8 caracteres
+- Le mot de passe est envoye a l'edge function
 
-**Actions par utilisateur** :
-- Modifier : dialog pour changer nom, unite, statut actif
-- Gerer les roles : dialog pour ajouter/retirer des app_roles
-- Desactiver/Reactiver le compte
+### 1.4 Admin peut reinitialiser le mot de passe d'un utilisateur
 
-### 4. Composant `UsersTab.tsx`
+**Fichier**: `supabase/functions/invite-user/index.ts` (ou nouvelle edge function `reset-user-password`)
+- Nouvelle route/action : recevoir `{ user_id, new_password }`
+- Utiliser `adminClient.auth.admin.updateUserById(userId, { password })`
+- Securise : verifier que l'appelant est manager_or_above
 
-Nouveau composant `src/components/settings/UsersTab.tsx` :
-- Fetch profiles + user_roles (join)
-- Fetch units pour le select
-- CRUD complet avec mutations react-query
-- Gestion d'erreurs et toasts
+**Fichier**: `src/components/settings/UsersTab.tsx`
+- Ajouter un bouton "Reinitialiser MDP" dans les actions de chaque utilisateur
+- Dialog avec champ nouveau mot de passe
+- Appel a l'edge function
 
-## Details techniques
+### 1.5 Admin peut supprimer un utilisateur
 
-### Edge Function invite-user
+**Fichier**: `supabase/functions/invite-user/index.ts` (ou nouvelle edge function `delete-user`)
+- Nouvelle action DELETE : recevoir `{ user_id }`
+- Utiliser `adminClient.auth.admin.deleteUser(userId)`
+- Les cascades DB supprimeront le profil et les roles
+- Securise : verifier que l'appelant est manager_or_above et ne se supprime pas lui-meme
 
-```text
-POST /invite-user
-Body: { email, full_name, role, app_roles[], unit_id }
-Auth: Bearer token (verifie manager/super_admin)
-Response: { user_id, profile }
-```
+**Fichier**: `src/components/settings/UsersTab.tsx`
+- Ajouter un bouton "Supprimer" (avec confirmation AlertDialog) dans les actions
+- Appel a l'edge function
 
-### Migrations RLS
+---
 
-```sql
--- Managers can update any profile
-CREATE POLICY "Managers can update profiles"
-ON profiles FOR UPDATE TO authenticated
-USING (is_manager_or_above(auth.uid()));
+## Phase 2 : Controle d'acces (P1)
 
--- Managers can manage roles
-CREATE POLICY "Managers can manage roles"
-ON user_roles FOR ALL TO authenticated
-USING (is_manager_or_above(auth.uid()))
-WITH CHECK (is_manager_or_above(auth.uid()));
-```
+### 2.1 Migrer ProtectedRoute vers app_roles
 
-### Structure UI
+**Fichier**: `src/components/auth/ProtectedRoute.tsx`
+- Remplacer `requireManager` par une prop `requiredRoles?: AppRole[]`
+- Verifier via `hasRole()` ou `appRoles` au lieu de `isManager`
+- Garder la retrocompatibilite : si `requiredRoles` absent, tout utilisateur authentifie passe
 
-```text
-Settings
-  |-- Mon profil
-  |-- Utilisateurs  <-- NOUVEAU (manager only)
-  |-- Postes
-  |-- Referentiels
-  |-- Affectations
-```
+**Fichier**: `src/App.tsx`
+- Remplacer `requireManager` par `requiredRoles={['manager_unite', 'admin_site', 'super_admin']}` sur les routes manager
 
-### Tableau utilisateurs
+### 2.2 Migrer la navigation vers app_roles
 
-| Nom | Email | Role | Acces | Unite | Actif | Actions |
-|-----|-------|------|-------|-------|-------|---------|
-| Administrateur | amoo@... | Manager | manager_unite | - | Oui | Modifier / Roles |
+**Fichier**: `src/components/layout/AppSidebar.tsx`
+- Changer le type de `roles` dans `navigationItems` : de `string[]` (supervisor/manager) vers `AppRole[]`
+- Filtrer via `appRoles` depuis le contexte au lieu de `profile.role`
+- Mapping :
+  - `['supervisor', 'manager']` → `['superviseur', 'manager_unite', 'admin_site', 'super_admin']`
+  - `['manager']` → `['manager_unite', 'admin_site', 'super_admin']`
+  - Le role `readonly` voit uniquement Dashboard, Classement, Objectifs
 
-## Fichiers concernes
+### 2.3 Restrictions UI pour le role `readonly`
 
-| Fichier | Action |
-|---------|--------|
-| `supabase/functions/invite-user/index.ts` | Creer |
-| Migration SQL | RLS profiles + user_roles |
-| `src/components/settings/UsersTab.tsx` | Creer |
-| `src/pages/Settings.tsx` | Ajouter onglet Utilisateurs |
+**Fichiers**: `NewEvent.tsx`, `Operators.tsx`, `Dashboard.tsx`
+- Masquer les boutons de creation/modification pour les utilisateurs `readonly`
+- Utiliser `hasRole('readonly')` depuis le contexte
+- Le readonly peut voir les donnees mais pas agir
+
+---
+
+## Phase 3 : Qualite des donnees (P1)
+
+### 3.1 Corriger l'import events -- dates distribuees
+
+**Fichier**: `src/pages/Import.tsx`
+- Au lieu de `event_date: row.mois + '-01'` pour tous les events, distribuer les dates :
+  - Retard i → `mois-{i+1}` (jour 1, 2, 3...)
+  - Heures sup i → `mois-{10+i}` (jour 10, 11, 12...)
+  - Weekends i → les samedis du mois
+- Ajouter `approved_at: new Date().toISOString()` sur chaque event importe
+
+### 3.2 Shifts et Lines dynamiques dans NewEvent
+
+**Fichier**: `src/pages/NewEvent.tsx`
+- Remplacer les valeurs hardcodees ("Matin", "Apres-midi", "Nuit") par un fetch de la table `shifts`
+- Remplacer le champ texte "Ligne" par un Select avec fetch de la table `lines`
+- Utiliser les IDs (`shift_id`, `line_id`) au lieu des champs texte (`shift`, `line`)
+
+---
+
+## Phase 4 : Robustesse UX (P2)
+
+### 4.1 ErrorBoundary global
+
+**Fichier**: Creer `src/components/ErrorBoundary.tsx`
+- Composant React class avec `componentDidCatch`
+- Affiche un message d'erreur convivial avec bouton "Recharger"
+
+**Fichier**: `src/App.tsx`
+- Wrapper les routes avec ErrorBoundary
+
+### 4.2 Confirmation de suppression partout
+
+**Fichiers**: `Settings.tsx` (positions), `UsersTab.tsx`, `Objectives.tsx`
+- Remplacer les suppressions directes par un AlertDialog de confirmation
+- Message : "Cette action est irreversible. Voulez-vous continuer ?"
+
+### 4.3 Liens SPA dans Dashboard
+
+**Fichier**: `src/pages/Dashboard.tsx`
+- Remplacer les 3 balises `<a href=...>` (lignes 252, 268, 284) par `<Link to=...>` de react-router-dom
+
+### 4.4 QueryClient hors du composant
+
+**Fichier**: `src/App.tsx`
+- Deplacer `const queryClient = new QueryClient()` hors du composant App
+- Ajouter `defaultOptions: { queries: { staleTime: 60_000 } }` pour eviter les re-fetch constants
+
+---
+
+## Resume des livrables
+
+| Priorite | Tache | Fichiers |
+|----------|-------|----------|
+| P0 | Supprimer inscription publique | Login.tsx, AuthContext.tsx |
+| P0 | Bloquer comptes desactives | AuthContext.tsx |
+| P0 | Mot de passe a l'invitation | invite-user/index.ts, UsersTab.tsx |
+| P0 | Reinitialisation MDP par admin | Nouvelle edge function, UsersTab.tsx |
+| P0 | Suppression utilisateur par admin | Nouvelle edge function, UsersTab.tsx |
+| P1 | Migrer ProtectedRoute vers app_roles | ProtectedRoute.tsx, App.tsx |
+| P1 | Migrer navigation vers app_roles | AppSidebar.tsx |
+| P1 | Restrictions readonly | NewEvent, Operators, Dashboard |
+| P1 | Import events dates distribuees | Import.tsx |
+| P1 | Shifts/Lines dynamiques | NewEvent.tsx |
+| P2 | ErrorBoundary | Nouveau composant, App.tsx |
+| P2 | Confirmation suppression | Settings, UsersTab, Objectives |
+| P2 | Liens SPA Dashboard | Dashboard.tsx |
+| P2 | QueryClient optimise | App.tsx |
 
 ## Ordre d'execution
 
-1. Migration SQL (RLS)
-2. Edge function invite-user
-3. Composant UsersTab
-4. Integration dans Settings
+1. P0 : Securite (inscription, comptes inactifs, MDP admin, suppression)
+2. P1 : Controle d'acces (app_roles, readonly, import, shifts/lines)
+3. P2 : Robustesse (ErrorBoundary, confirmations, liens, performance)
 
