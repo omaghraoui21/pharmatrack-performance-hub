@@ -44,7 +44,9 @@ export default function NewEvent() {
   const [eventDate, setEventDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [eventTime, setEventTime] = useState('');
   const [shift, setShift] = useState('');
+  const [shiftId, setShiftId] = useState('');
   const [line, setLine] = useState('');
+  const [lineId, setLineId] = useState('');
   const [description, setDescription] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
@@ -76,6 +78,32 @@ export default function NewEvent() {
         .order('category')
         .order('label');
 
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Récupérer les shifts depuis la DB
+  const { data: shifts } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('id, code, name')
+        .order('code');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Récupérer les lignes depuis la DB
+  const { data: lines } = useQuery({
+    queryKey: ['lines'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('lines')
+        .select('id, code, name')
+        .order('code');
       if (error) throw error;
       return data;
     },
@@ -141,7 +169,9 @@ export default function NewEvent() {
         event_date: eventDate,
         event_time: eventTime || null,
         shift: shift || null,
+        shift_id: shiftId || null,
         line: line || null,
+        line_id: lineId || null,
         description: description || null,
         attachment_url: attachmentUrl,
         status: 'pending',
@@ -350,25 +380,41 @@ export default function NewEvent() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="shift">Équipe (shift)</Label>
-                <Select value={shift} onValueChange={setShift}>
+                <Select value={shiftId} onValueChange={(val) => {
+                  setShiftId(val);
+                  const s = shifts?.find(s => s.id === val);
+                  setShift(s?.name || s?.code || '');
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionner..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="matin">Matin</SelectItem>
-                    <SelectItem value="apres-midi">Après-midi</SelectItem>
-                    <SelectItem value="nuit">Nuit</SelectItem>
+                    {shifts?.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name || s.code}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="line">Ligne</Label>
-                <Input
-                  id="line"
-                  placeholder="Ligne A"
-                  value={line}
-                  onChange={(e) => setLine(e.target.value)}
-                />
+                <Select value={lineId} onValueChange={(val) => {
+                  setLineId(val);
+                  const l = lines?.find(l => l.id === val);
+                  setLine(l?.name || l?.code || '');
+                }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sélectionner..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {lines?.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.name} ({l.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
