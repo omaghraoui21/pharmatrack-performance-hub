@@ -57,6 +57,7 @@ export default function Operators() {
     full_name: '',
     unit: '',
     is_active: true,
+    supervisor_id: '',
   });
 
   // Récupérer les unités
@@ -67,6 +68,20 @@ export default function Operators() {
         .from('units')
         .select('*')
         .order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Récupérer les profils (superviseurs potentiels)
+  const { data: profiles } = useQuery({
+    queryKey: ['profiles-for-assignment'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .eq('is_active', true)
+        .order('full_name');
       if (error) throw error;
       return data;
     },
@@ -100,20 +115,47 @@ export default function Operators() {
           })
           .eq('id', data.id);
         if (error) throw error;
+
+        // Update supervisor assignment if changed
+        if (data.supervisor_id) {
+          // End existing assignments
+          await supabase
+            .from('supervisor_operator_map')
+            .update({ end_date: new Date().toISOString().split('T')[0] })
+            .eq('operator_id', data.id)
+            .is('end_date', null);
+
+          // Create new assignment
+          const { error: mapError } = await supabase
+            .from('supervisor_operator_map')
+            .insert({ supervisor_id: data.supervisor_id, operator_id: data.id });
+          if (mapError) throw mapError;
+        }
       } else {
-        const { error } = await supabase
+        const { data: newOp, error } = await supabase
           .from('operators')
           .insert({
             matricule: data.matricule,
             full_name: data.full_name,
             unit: data.unit,
             is_active: data.is_active,
-          });
+          })
+          .select('id')
+          .single();
         if (error) throw error;
+
+        // Assign to supervisor
+        if (data.supervisor_id && newOp) {
+          const { error: mapError } = await supabase
+            .from('supervisor_operator_map')
+            .insert({ supervisor_id: data.supervisor_id, operator_id: newOp.id });
+          if (mapError) throw mapError;
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operators'] });
+      queryClient.invalidateQueries({ queryKey: ['supervisor-operator-map'] });
       toast.success(editingOperator ? 'Opérateur modifié' : 'Opérateur créé');
       handleCloseDialog();
     },
@@ -137,6 +179,7 @@ export default function Operators() {
         full_name: operator.full_name,
         unit: operator.unit,
         is_active: operator.is_active,
+        supervisor_id: '',
       });
     } else {
       setEditingOperator(null);
@@ -145,6 +188,7 @@ export default function Operators() {
         full_name: '',
         unit: '',
         is_active: true,
+        supervisor_id: '',
       });
     }
     setIsDialogOpen(true);
@@ -158,6 +202,7 @@ export default function Operators() {
       full_name: '',
       unit: '',
       is_active: true,
+      supervisor_id: '',
     });
   };
 
@@ -242,6 +287,27 @@ export default function Operators() {
                         {units?.map((u) => (
                           <SelectItem key={u.id} value={u.name}>
                             {u.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="supervisor">Responsable direct</Label>
+                    <Select
+                      value={formData.supervisor_id}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, supervisor_id: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner un responsable" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {profiles?.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.full_name}
                           </SelectItem>
                         ))}
                       </SelectContent>
