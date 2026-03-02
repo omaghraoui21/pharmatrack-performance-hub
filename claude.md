@@ -16,26 +16,30 @@ Internal web app for a pharmaceutical company to track daily operator events (GM
 ```
 src/
 ├── App.tsx                    # Routes definition (all wrapped in ProtectedRoute + AppLayout)
-├── contexts/AuthContext.tsx   # Auth state, profile, appRoles, signIn/signUp/signOut
+├── contexts/AuthContext.tsx   # Auth state, profile, appRoles, signIn/signOut
 ├── components/
 │   ├── layout/
 │   │   ├── AppLayout.tsx      # SidebarProvider + main content wrapper
 │   │   └── AppSidebar.tsx     # Navigation sidebar with role-filtered menu items
-│   ├── auth/ProtectedRoute.tsx # Auth guard, optional `requireManager` prop
+│   ├── auth/ProtectedRoute.tsx # Auth guard with requiredRoles prop
 │   ├── settings/
 │   │   ├── UsersTab.tsx       # CRUD for user management (invite, edit, roles)
 │   │   ├── ReferentialsTab.tsx # Manage event_types, units, lines, shifts
-│   │   └── AssignmentsTab.tsx  # Supervisor-operator assignments
+│   │   └── AssignmentsTab.tsx  # Hierarchy links + operator-to-supervisor assignments
+│   ├── ErrorBoundary.tsx      # Global error boundary
 │   └── ui/                    # shadcn components
+├── hooks/
+│   ├── useHierarchyScope.ts   # Returns visible operator IDs based on hierarchy cascade
+│   └── use-mobile.tsx
 ├── pages/
 │   ├── Login.tsx              # Email/password auth
-│   ├── Dashboard.tsx          # KPI dashboard
+│   ├── Dashboard.tsx          # KPI dashboard (filtered by hierarchy scope)
 │   ├── Operators.tsx          # Operator list + CRUD
 │   ├── NewEvent.tsx           # Create new event for an operator
-│   ├── Validation.tsx         # Manager approves/rejects pending events
+│   ├── Validation.tsx         # Manager approves/rejects pending events (filtered by scope)
 │   ├── Import.tsx             # CSV/Excel import of monthly data
 │   ├── Scoring.tsx            # Scoring grid configuration
-│   ├── Ranking.tsx            # Annual operator ranking (score100/note20)
+│   ├── Ranking.tsx            # Annual operator ranking (filtered by scope)
 │   ├── HierarchyRanking.tsx   # Supervisor & manager ranking
 │   ├── Objectives.tsx         # Personal objectives management
 │   ├── Settings.tsx           # Profile, Users, Positions, Referentials, Assignments tabs
@@ -43,97 +47,59 @@ src/
 ├── integrations/supabase/
 │   ├── client.ts              # Auto-generated, DO NOT EDIT
 │   └── types.ts               # Auto-generated, DO NOT EDIT
-└── hooks/, lib/               # Utilities
+└── lib/                       # Utilities
 ```
 
-## Database Schema
+## Database
 
-### Core Tables
+See **`database.md`** for complete schema, functions, RLS policies, and hierarchy model documentation.
+
+### Quick Reference
 
 | Table | Purpose |
 |-------|---------|
-| `profiles` | User profiles (id = auth.users.id). Columns: email, full_name, role (supervisor\|manager), unit_id, is_active, manager_profile_id |
-| `user_roles` | App-level roles (many-to-many). Columns: user_id, role (app_role enum) |
-| `operators` | Factory floor operators. Columns: matricule, full_name, unit (text), is_active |
-| `events` | Daily events recorded for operators. Columns: operator_id, event_type_id, event_date, status (pending\|approved\|rejected), created_by, validated_by, etc. |
-| `event_types` | Reference table for event categories. Columns: code, label, category (event_category enum), points, requires_description |
-| `units` | Organizational units (e.g., production lines) |
-| `lines` | Production lines within units |
-| `shifts` | Work shifts (A, B, C, etc.) |
-| `positions` | Job positions for operator versatility tracking |
-| `operator_positions` | Many-to-many: operators ↔ positions |
-| `supervisor_operator_map` | Assigns supervisors to operators (start_date, end_date) |
-| `objectives` | Personal objectives with target/actual values and scoring |
-
-### Enums
-
-- `user_role`: `supervisor`, `manager`
-- `app_role`: `super_admin`, `admin_site`, `manager_unite`, `superviseur`, `readonly`
-- `event_category`: `gmp`, `hse`, `comportement`, `flexibilite`, `assiduite`, `bonus`, `polyvalence`, `productivite`
-- `event_status`: `pending`, `approved`, `rejected`
+| `profiles` | User profiles (id = auth.users.id) |
+| `user_roles` | App-level roles (many-to-many) |
+| `hierarchy_links` | N-level org chart (parent→child between profiles, N:N) |
+| `operators` | Factory floor operators (no login) |
+| `supervisor_operator_map` | Assigns profiles to operators (for visibility cascade) |
+| `events` | Daily events recorded for operators |
+| `event_types` | Event categories with point values |
+| `units` / `lines` / `shifts` | Organizational referentials |
+| `positions` / `operator_positions` | Job positions for polyvalence tracking |
+| `objectives` | Personal objectives with scoring |
 
 ### Key Database Functions
 
-- `has_role(_user_id, _role)` — SECURITY DEFINER, checks user_roles table
-- `is_manager_or_above(_user_id)` — Returns true if user has super_admin, admin_site, or manager_unite role, OR profiles.role = 'manager'
-- `get_year_ranking(p_year, p_unit_id?)` — Computes operator annual scores (base 80, daily bonus capped at 1.5, malus uncapped, polyvalence bonus)
-- `get_supervisor_ranking(p_year, p_unit_id?)` — Ranks supervisors based on team avg score, pending events, validation delay
-- `get_manager_ranking(p_year)` — Ranks managers based on unit performance
-- `handle_new_user()` — Trigger on auth.users INSERT → creates profiles row
-- `update_updated_at_column()` — Generic trigger for updated_at timestamps
-
-### RLS Policies Summary
-
-- **profiles**: Everyone can SELECT. Users can UPDATE own. Managers (is_manager_or_above) can UPDATE any.
-- **user_roles**: Users can see own + managers can see all. Managers can INSERT/UPDATE/DELETE. Super_admin has full ALL.
-- **events**: Anyone authenticated can SELECT all and INSERT (own). Managers can UPDATE.
-- **operators, positions, event_types, lines, shifts, operator_positions**: Everyone can SELECT. Managers can manage (INSERT/UPDATE/DELETE).
-- **supervisor_operator_map**: Everyone can SELECT. Managers (is_manager_or_above) can manage.
-- **objectives**: Users see/manage own. Managers can see/update all. Managers can DELETE.
+- `has_role(_user_id, _role)` — checks user_roles table (SECURITY DEFINER)
+- `is_manager_or_above(_user_id)` — checks for super_admin/admin_site/manager_unite or profiles.role='manager'
+- `get_descendants(_profile_id)` — recursive traversal of hierarchy_links
+- `get_visible_operator_ids(_profile_id)` — operators visible via self + descendants
+- `get_year_ranking(p_year, p_unit_id?)` — annual operator scoring
+- `get_supervisor_ranking(p_year, p_unit_id?)` — supervisor ranking
+- `get_manager_ranking(p_year)` — manager ranking
 
 ## Authentication & Authorization
 
 ### Dual Role System
 
-1. **Legacy role** (`profiles.role`): `supervisor` or `manager` — used for basic route guarding and navigation filtering
+1. **Legacy role** (`profiles.role`): `supervisor` or `manager` — used for basic backward compat
 2. **App roles** (`user_roles` table): Granular permissions — `super_admin`, `admin_site`, `manager_unite`, `superviseur`, `readonly`
 
 ### AuthContext provides:
 - `user`, `session`, `profile`, `appRoles`, `loading`
 - `isManager` (profiles.role === 'manager'), `isSupervisor`, `isSuperAdmin`
 - `hasRole(role)` — checks appRoles array
-- `signIn`, `signUp`, `signOut`
+- `signIn`, `signOut`
 
 ### Route Protection
 - `<ProtectedRoute>` — requires authenticated user
-- `<ProtectedRoute requireManager>` — requires profiles.role === 'manager'
+- `<ProtectedRoute requiredRoles={['manager_unite', 'admin_site', 'super_admin']}>` — requires specific app_role
 
-## Edge Functions
-
-### `invite-user`
-- **POST** with body: `{ email, full_name, role, app_roles[], unit_id }`
-- Requires Authorization header from a manager_or_above user
-- Uses service_role to call `auth.admin.createUser()` with random password
-- Auto-creates profile (via DB trigger), updates unit_id, inserts app_roles
-
-### `seed-demo-users`
-- Creates 5 demo accounts for testing (password: `Demo1234!`):
-  - superadmin@demo.com (super_admin)
-  - adminsite@demo.com (admin_site)
-  - manager@demo.com (manager_unite)
-  - superviseur@demo.com (superviseur)
-  - readonly@demo.com (readonly)
-
-## User Management (Settings > Utilisateurs)
-
-The `UsersTab` component provides full CRUD:
-- **List** all profiles with their app_roles and unit
-- **Invite** new users via the invite-user edge function
-- **Edit** profile info (full_name, unit_id, is_active)
-- **Manage roles** — add/remove app_roles per user
-- **Toggle active status**
-
-Only visible to users where `isManager === true`.
+### Hierarchy-Based Data Filtering
+- `useHierarchyScope()` hook provides `canSeeOperator(id)`, `visibleOperatorIds`, `isFullAccess`
+- Managers+ (manager_unite, admin_site, super_admin) = full access, bypass hierarchy
+- Others see only operators assigned to themselves or their descendants via `get_visible_operator_ids()`
 
 ## Scoring System
 
@@ -142,6 +108,14 @@ Only visible to users where `isManager === true`.
 - Polyvalence bonus: **(positions_count - 2) × 0.5** if > 2 positions
 - Final: `score100 = clamp(0, 100, 80 + event_points + polyvalence_bonus)`
 - `note20 = score100 / 5`
+
+## Edge Functions
+
+| Function | Purpose |
+|----------|---------|
+| `invite-user` | POST — creates auth user + profile + roles (requires manager+ auth) |
+| `seed-demo-users` | POST — creates 5 demo accounts (password: `Demo1234!`) |
+| `manage-user` | User management operations |
 
 ## Storage
 
@@ -152,13 +126,12 @@ Only visible to users where `isManager === true`.
 - `src/integrations/supabase/client.ts` — auto-generated
 - `src/integrations/supabase/types.ts` — auto-generated
 - `supabase/config.toml` — auto-managed
-- `.env` — auto-managed (VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_PROJECT_ID)
+- `.env` — auto-managed
 
 ## Known Gaps / TODO
 
 - No email notification when a user is invited (password is random, no reset flow triggered)
 - `readonly` role has no specific UI restrictions yet (navigation/actions not filtered by app_role)
-- Navigation filtering uses legacy `profiles.role` only, not `app_roles`
 - No audit log for admin actions
-- Manager_profile_id column exists on profiles but is not used in UI
 - The `operators.unit` column is text (not FK to units.id) — legacy design
+- Operators don't have login accounts yet (planned for v2/v3 for self-service ranking view)
