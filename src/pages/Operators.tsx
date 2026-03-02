@@ -4,6 +4,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -50,6 +57,19 @@ export default function Operators() {
     full_name: '',
     unit: '',
     is_active: true,
+  });
+
+  // Récupérer les unités
+  const { data: units } = useQuery({
+    queryKey: ['units'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('units')
+        .select('*')
+        .order('name');
+      if (error) throw error;
+      return data;
+    },
   });
 
   // Récupérer les opérateurs
@@ -209,15 +229,23 @@ export default function Operators() {
 
                   <div className="grid gap-2">
                     <Label htmlFor="unit">Unité</Label>
-                    <Input
-                      id="unit"
-                      placeholder="Production A"
+                    <Select
                       value={formData.unit}
-                      onChange={(e) =>
-                        setFormData({ ...formData, unit: e.target.value })
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, unit: value })
                       }
-                      required
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sélectionner une unité" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {units?.map((u) => (
+                          <SelectItem key={u.id} value={u.name}>
+                            {u.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 

@@ -24,6 +24,17 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { 
   User, 
@@ -41,7 +52,8 @@ import { AssignmentsTab } from '@/components/settings/AssignmentsTab';
 import { UsersTab } from '@/components/settings/UsersTab';
 
 export default function Settings() {
-  const { profile, isManager } = useAuth();
+  const { profile, hasRole } = useAuth();
+  const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
   const queryClient = useQueryClient();
   
   // Profile state
@@ -186,7 +198,7 @@ export default function Settings() {
             <User className="h-4 w-4" />
             Mon profil
           </TabsTrigger>
-          {isManager && (
+          {canManage && (
             <>
               <TabsTrigger value="users" className="gap-2">
                 <Users className="h-4 w-4" />
@@ -269,14 +281,14 @@ export default function Settings() {
         </TabsContent>
 
         {/* Onglet Utilisateurs (Manager only) */}
-        {isManager && (
+        {canManage && (
           <TabsContent value="users">
             <UsersTab />
           </TabsContent>
         )}
 
         {/* Onglet Postes (Manager only) */}
-        {isManager && (
+        {canManage && (
           <TabsContent value="positions">
             <Card>
               <CardHeader>
@@ -329,15 +341,32 @@ export default function Settings() {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-destructive hover:text-destructive"
-                                  onClick={() => deletePositionMutation.mutate(position.id)}
-                                  disabled={deletePositionMutation.isPending}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-destructive hover:text-destructive"
+                                      disabled={deletePositionMutation.isPending}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Supprimer le poste</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Cette action est irréversible. Voulez-vous continuer ?
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Annuler</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => deletePositionMutation.mutate(position.id)}>
+                                        Supprimer
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -358,14 +387,14 @@ export default function Settings() {
         )}
 
         {/* Onglet Référentiels (Manager only) */}
-        {isManager && (
+        {canManage && (
           <TabsContent value="referentials">
             <ReferentialsTab />
           </TabsContent>
         )}
 
         {/* Onglet Affectations (Manager only) */}
-        {isManager && (
+        {canManage && (
           <TabsContent value="assignments">
             <AssignmentsTab />
           </TabsContent>
