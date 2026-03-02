@@ -23,6 +23,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -71,7 +82,8 @@ const statusLabels: Record<string, { label: string; variant: 'default' | 'second
 };
 
 export default function Objectives() {
-  const { profile, isManager } = useAuth();
+  const { profile, hasRole } = useAuth();
+  const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
   const queryClient = useQueryClient();
   
   const [showDialog, setShowDialog] = useState(false);
@@ -103,7 +115,7 @@ export default function Objectives() {
   });
 
   // Filter objectives for current user (unless manager)
-  const displayedObjectives = isManager 
+  const displayedObjectives = canManage 
     ? objectives 
     : objectives?.filter(o => o.owner_profile_id === profile?.id);
 
@@ -354,7 +366,7 @@ export default function Objectives() {
                               <Send className="h-4 w-4" />
                             </Button>
                           )}
-                          {isManager && obj.status === 'submitted' && (
+                          {canManage && obj.status === 'submitted' && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -368,16 +380,33 @@ export default function Objectives() {
                           <Button size="sm" variant="outline" onClick={() => openDialog(obj)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          {isManager && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-destructive"
-                              onClick={() => deleteMutation.mutate(obj.id)}
-                              disabled={deleteMutation.isPending}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          {canManage && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-destructive"
+                                  disabled={deleteMutation.isPending}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Supprimer l'objectif</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Cette action est irréversible. Voulez-vous continuer ?
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Annuler</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(obj.id)}>
+                                    Supprimer
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           )}
                         </div>
                       </TableCell>
