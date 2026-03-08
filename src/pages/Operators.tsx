@@ -56,6 +56,7 @@ export default function Operators() {
   const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [unitFilter, setUnitFilter] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState<Operator | null>(null);
   
