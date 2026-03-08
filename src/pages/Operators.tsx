@@ -396,6 +396,7 @@ export default function Operators() {
                     <TableHead>Matricule</TableHead>
                     <TableHead>Nom complet</TableHead>
                     <TableHead>Unité</TableHead>
+                    <TableHead>Responsable</TableHead>
                     <TableHead>Statut</TableHead>
                     {canManage && <TableHead className="w-[100px]">Actions</TableHead>}
                   </TableRow>
@@ -408,11 +409,21 @@ export default function Operators() {
                       </TableCell>
                       <TableCell>{operator.full_name}</TableCell>
                       <TableCell>{operator.unit}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {supervisorByOperator.get(operator.id) || '—'}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant={operator.is_active ? 'default' : 'secondary'}
                           className={
                             operator.is_active
+                              ? 'bg-success/10 text-success border-success/20'
+                              : ''
+                          }
+                        >
+                          {operator.is_active ? 'Actif' : 'Inactif'}
+                        </Badge>
+                      </TableCell>
                               ? 'bg-success/10 text-success border-success/20'
                               : ''
                           }
