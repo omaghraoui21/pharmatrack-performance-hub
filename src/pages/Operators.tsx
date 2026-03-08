@@ -424,13 +424,6 @@ export default function Operators() {
                           {operator.is_active ? 'Actif' : 'Inactif'}
                         </Badge>
                       </TableCell>
-                              ? 'bg-success/10 text-success border-success/20'
-                              : ''
-                          }
-                        >
-                          {operator.is_active ? 'Actif' : 'Inactif'}
-                        </Badge>
-                      </TableCell>
                       {canManage && (
                         <TableCell>
                           <Button
