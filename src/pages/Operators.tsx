@@ -56,6 +56,7 @@ export default function Operators() {
   const canManage = hasRole('manager_unite') || hasRole('admin_site') || hasRole('super_admin');
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [unitFilter, setUnitFilter] = useState<string>('all');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingOperator, setEditingOperator] = useState<Operator | null>(null);
   
@@ -198,10 +199,14 @@ export default function Operators() {
   });
 
   const filteredOperators = operators?.filter(
-    (op) =>
-      op.matricule.toLowerCase().includes(search.toLowerCase()) ||
-      op.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      op.unit.toLowerCase().includes(search.toLowerCase())
+    (op) => {
+      const matchesSearch =
+        op.matricule.toLowerCase().includes(search.toLowerCase()) ||
+        op.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        op.unit.toLowerCase().includes(search.toLowerCase());
+      const matchesUnit = unitFilter === 'all' || op.unit === unitFilter;
+      return matchesSearch && matchesUnit;
+    }
   );
 
   const handleOpenDialog = (operator?: Operator) => {
@@ -375,12 +380,25 @@ export default function Operators() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Rechercher par matricule, nom ou unité..."
+                placeholder="Rechercher par matricule, nom..."
                 className="pl-10"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+            <Select value={unitFilter} onValueChange={setUnitFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Toutes les unités" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les unités</SelectItem>
+                {units?.map((u) => (
+                  <SelectItem key={u.id} value={u.name}>
+                    {u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>
