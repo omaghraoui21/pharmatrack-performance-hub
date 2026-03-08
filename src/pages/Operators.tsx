@@ -199,10 +199,14 @@ export default function Operators() {
   });
 
   const filteredOperators = operators?.filter(
-    (op) =>
-      op.matricule.toLowerCase().includes(search.toLowerCase()) ||
-      op.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      op.unit.toLowerCase().includes(search.toLowerCase())
+    (op) => {
+      const matchesSearch =
+        op.matricule.toLowerCase().includes(search.toLowerCase()) ||
+        op.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        op.unit.toLowerCase().includes(search.toLowerCase());
+      const matchesUnit = unitFilter === 'all' || op.unit === unitFilter;
+      return matchesSearch && matchesUnit;
+    }
   );
 
   const handleOpenDialog = (operator?: Operator) => {
