@@ -380,12 +380,25 @@ export default function Operators() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Rechercher par matricule, nom ou unité..."
+                placeholder="Rechercher par matricule, nom..."
                 className="pl-10"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
+            <Select value={unitFilter} onValueChange={setUnitFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Toutes les unités" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les unités</SelectItem>
+                {units?.map((u) => (
+                  <SelectItem key={u.id} value={u.name}>
+                    {u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardHeader>
         <CardContent>
