@@ -44,6 +44,12 @@ interface Operator {
   created_at: string;
 }
 
+interface SupervisorMap {
+  operator_id: string;
+  supervisor_id: string;
+  profiles: { full_name: string } | null;
+}
+
 export default function Operators() {
   const { hasRole, appRoles } = useAuth();
   const { isFullAccess, canSeeOperator } = useHierarchyScope();
@@ -87,6 +93,27 @@ export default function Operators() {
       if (error) throw error;
       return data;
     },
+  });
+
+  // Récupérer les assignations superviseur-opérateur
+  const { data: supervisorMaps } = useQuery({
+    queryKey: ['supervisor-operator-map'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('supervisor_operator_map')
+        .select('operator_id, supervisor_id, profiles!supervisor_operator_map_supervisor_id_fkey(full_name)')
+        .or('end_date.is.null,end_date.gte.' + new Date().toISOString().split('T')[0]);
+      if (error) throw error;
+      return data as SupervisorMap[];
+    },
+  });
+
+  // Créer un map pour accès rapide au superviseur par operator_id
+  const supervisorByOperator = new Map<string, string>();
+  supervisorMaps?.forEach((m) => {
+    if (m.profiles?.full_name) {
+      supervisorByOperator.set(m.operator_id, m.profiles.full_name);
+    }
   });
 
   // Récupérer les opérateurs
