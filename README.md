@@ -1,73 +1,55 @@
-# Welcome to your Lovable project
+# PharmaTrack Performance Hub
 
-## Project info
+Open-source dashboard concept for pharmaceutical manufacturing performance: OEE/TRS, batch progress, downtime visibility, and daily production review.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+This project is maintained by Omar Maghraoui, a pharmacist, industrial production manager, and AI-assisted software builder. It is part of a long-term effort to build practical open-source tools for pharmaceutical operations.
 
-## How can I edit this code?
+## Why this project exists
 
-There are several ways of editing your application.
+Production managers need fast visibility into performance losses, batch progress, downtime patterns, and quality blockers. In many factories, that information is spread across spreadsheets, paper records, shift notes, and disconnected dashboards.
 
-**Use Lovable**
+PharmaTrack Performance Hub explores a simple web interface for connecting production KPIs with shop-floor follow-up.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Current MVP direction
 
-Changes made via Lovable will be committed automatically to this repo.
+The project uses a React / TypeScript / Vite stack and focuses on:
 
-**Use your preferred IDE**
+- Production KPI dashboard
+- OEE/TRS performance visibility
+- Batch and line-level follow-up
+- Downtime and quality-loss categories
+- Future AI-assisted production review drafts
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+This repository is early-stage open-source work. It is not validated GMP software. Any regulated use would require site validation, QA approval, access control, audit-trail design, and data-integrity review.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Target users
 
-Follow these steps:
+- Pharmaceutical production managers
+- Operational excellence teams
+- Shift supervisors
+- Process engineers
+- Quality partners reviewing operational trends
+- Developers building industrial open-source software
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## Run locally
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Project roadmap
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+See [roadmap.md](roadmap.md).
 
-**Use GitHub Codespaces**
+## Contributing
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## What technologies are used for this project?
+## Maintainer position
 
-This project is built with:
+I am building this in public from a real production background: pharmacist, industrial manager, and vibe coder learning software engineering with AI-assisted development.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## License
 
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+MIT
